@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from typing import Any
 
 import httpx
@@ -13,6 +15,8 @@ from errors import DwarError, TransportError
 from inference.types import (
     ChatRequest,
     ChatResponse,
+    CreateResult,
+    DescribeResult,
     Message,
     StopReason,
     TextBlock,
@@ -29,7 +33,7 @@ class GeminiAdapter:
         *,
         api_key: str,
         model: str,
-        max_tokens: int,
+        max_tokens: int | None,
         timeout_ms: int,
     ) -> None:
         self._model = model
@@ -41,6 +45,33 @@ class GeminiAdapter:
                 retry_options=genai_types.HttpRetryOptions(attempts=1),
             ),
         )
+
+    def _generate(
+        self, contents: Any, config: genai_types.GenerateContentConfig
+    ) -> Any:
+        try:
+            return self._client.models.generate_content(
+                model=self._model,
+                contents=contents,
+                config=config,
+            )
+        except genai_errors.ClientError as exc:
+            code = exc.code
+            if code in (408, 429):
+                raise TransportError(
+                    429 if code == 429 else 504,
+                    "rate_limit" if code == 429 else "timeout",
+                    exc.message,
+                ) from exc
+            raise DwarError(502, "provider", exc.message) from exc
+        except genai_errors.ServerError as exc:
+            if exc.code == 504:
+                raise TransportError(504, "timeout", exc.message) from exc
+            raise TransportError(502, "provider", exc.message) from exc
+        except httpx.TimeoutException as exc:
+            raise TransportError(504, "timeout", str(exc)) from exc
+        except httpx.RequestError as exc:
+            raise TransportError(502, "connection", str(exc)) from exc
 
     def complete(self, request: ChatRequest, lane_block: str) -> ChatResponse:
         config_kwargs: dict[str, Any] = {
@@ -66,34 +97,11 @@ class GeminiAdapter:
                 )
             ]
 
-        try:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=_to_contents(request.messages),
-                config=genai_types.GenerateContentConfig(**config_kwargs),
-            )
-        except genai_errors.ClientError as exc:
-            code = exc.code
-            if code in (408, 429):
-                raise TransportError(
-                    429 if code == 429 else 504,
-                    "rate_limit" if code == 429 else "timeout",
-                    exc.message,
-                ) from exc
-            raise DwarError(502, "provider", exc.message) from exc
-        except genai_errors.ServerError as exc:
-            if exc.code == 504:
-                raise TransportError(504, "timeout", exc.message) from exc
-            raise TransportError(502, "provider", exc.message) from exc
-        except httpx.TimeoutException as exc:
-            raise TransportError(504, "timeout", str(exc)) from exc
-        except httpx.RequestError as exc:
-            raise TransportError(502, "connection", str(exc)) from exc
-
-        if not response.candidates:
-            raise DwarError(502, "provider", "Gemini returned no candidates")
-        candidate = response.candidates[0]
-        parts = candidate.content.parts if candidate.content and candidate.content.parts else []
+        response = self._generate(
+            _to_contents(request.messages),
+            genai_types.GenerateContentConfig(**config_kwargs),
+        )
+        parts = _candidate_parts(response)
 
         content = []
         for part in parts:
@@ -114,20 +122,97 @@ class GeminiAdapter:
             elif part.text:
                 content.append(TextBlock(type="text", text=part.text))
 
-        if response.usage_metadata is None:
-            raise DwarError(502, "provider", "Gemini response missing usage")
-        usage_meta = response.usage_metadata
-        if usage_meta.prompt_token_count is None or usage_meta.candidates_token_count is None:
-            raise DwarError(502, "provider", "Gemini usage is missing token counts")
-        thoughts = usage_meta.thoughts_token_count or 0
         return ChatResponse(
             content=content,
-            stop_reason=_stop_reason(candidate.finish_reason, content),
-            usage=Usage(
-                input_tokens=usage_meta.prompt_token_count,
-                output_tokens=usage_meta.candidates_token_count + thoughts,
+            stop_reason=_stop_reason(_finish_reason(response), content),
+            usage=_usage(response),
+        )
+
+    def describe_image(
+        self, image: bytes, media_type: str, instruction: str
+    ) -> DescribeResult:
+        response = self._generate(
+            [
+                genai_types.Part.from_bytes(data=image, mime_type=media_type),
+                genai_types.Part.from_text(text=instruction),
+            ],
+            genai_types.GenerateContentConfig(
+                max_output_tokens=self._max_tokens,
+                thinking_config=genai_types.ThinkingConfig(
+                    thinking_level=genai_types.ThinkingLevel.MINIMAL,
+                    include_thoughts=False,
+                ),
             ),
         )
+        texts: list[str] = []
+        for part in _candidate_parts(response):
+            if getattr(part, "thought", False):
+                continue
+            if part.text:
+                texts.append(part.text)
+        description = "".join(texts).strip()
+        if not description:
+            raise DwarError(502, "provider", "Gemini returned no description")
+        return DescribeResult(description=description, usage=_usage(response))
+
+    def create_image(self, prompt: str) -> CreateResult:
+        response = self._generate(
+            prompt,
+            genai_types.GenerateContentConfig(response_modalities=["IMAGE"]),
+        )
+        image: bytes | None = None
+        media_type: str | None = None
+        for part in _candidate_parts(response):
+            if getattr(part, "thought", False):
+                continue
+            inline = part.inline_data
+            if inline is None or inline.data is None:
+                continue
+            raw = inline.data
+            if isinstance(raw, str):
+                try:
+                    image = base64.b64decode(raw)
+                except binascii.Error as exc:
+                    raise DwarError(
+                        502, "provider", "Gemini image data is not valid base64"
+                    ) from exc
+            else:
+                image = bytes(raw)
+            media_type = inline.mime_type
+            break
+        if image is None:
+            raise DwarError(502, "provider", "Gemini returned no image")
+        if not media_type:
+            raise DwarError(502, "provider", "Gemini image missing media type")
+        return CreateResult(media_type=media_type, image=image, usage=_usage(response))
+
+
+def _candidate_parts(response: Any) -> list[Any]:
+    if not response.candidates:
+        raise DwarError(502, "provider", "Gemini returned no candidates")
+    candidate = response.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        return []
+    return list(candidate.content.parts)
+
+
+def _finish_reason(response: Any) -> Any:
+    if not response.candidates:
+        raise DwarError(502, "provider", "Gemini returned no candidates")
+    return response.candidates[0].finish_reason
+
+
+def _usage(response: Any) -> Usage:
+    if response.usage_metadata is None:
+        raise DwarError(502, "provider", "Gemini response missing usage")
+    usage_meta = response.usage_metadata
+    if usage_meta.prompt_token_count is None or usage_meta.candidates_token_count is None:
+        raise DwarError(502, "provider", "Gemini usage is missing token counts")
+    thoughts = usage_meta.thoughts_token_count or 0
+    return Usage(
+        input_tokens=usage_meta.prompt_token_count,
+        output_tokens=usage_meta.candidates_token_count + thoughts,
+    )
 
 
 def _stop_reason(finish_reason: Any, content: list[TextBlock | ToolUseBlock]) -> StopReason:

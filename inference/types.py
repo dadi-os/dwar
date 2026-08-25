@@ -86,3 +86,19 @@ class EmbedResult(_Model):
     embeddings: list[list[float]]
     dimensions: int
     input_tokens: int
+
+
+class DescribeResult(_Model):
+    description: str
+    usage: Usage
+
+
+class CreateResult(_Model):
+    media_type: str
+    image: bytes
+    usage: Usage
+
+
+class TranscribeResult(_Model):
+    text: str
+    duration_seconds: float

@@ -23,8 +23,11 @@ class Env(BaseSettings):
     anthropic_api_key: str
     gemini_api_key: str
     openai_api_key: str
+    deepgram_api_key: str
 
-    @field_validator("anthropic_api_key", "gemini_api_key", "openai_api_key")
+    @field_validator(
+        "anthropic_api_key", "gemini_api_key", "openai_api_key", "deepgram_api_key"
+    )
     @classmethod
     def not_blank(cls, value: str) -> str:
         if not value.strip():
@@ -82,6 +85,89 @@ class Embed(BaseModel):
         return value
 
 
+class ImageDescribe(BaseModel):
+    provider: str
+    model: str
+    max_tokens: int
+    max_bytes: int
+    max_prompt_length: int
+    allowed_media_types: tuple[str, ...]
+
+    @field_validator("provider", "model")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("max_tokens", "max_bytes", "max_prompt_length")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        return value
+
+    @field_validator("allowed_media_types")
+    @classmethod
+    def media_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("must not be empty")
+        if any(not item.strip() for item in value):
+            raise ValueError("must not contain empty values")
+        return value
+
+
+class ImageCreate(BaseModel):
+    provider: str
+    model: str
+    max_prompt_length: int
+
+    @field_validator("provider", "model")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("max_prompt_length")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        return value
+
+
+class SpeechTranscribe(BaseModel):
+    provider: str
+    model: str
+    language: str
+    max_bytes: int
+    allowed_media_types: tuple[str, ...]
+
+    @field_validator("provider", "model", "language")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be empty")
+        return value
+
+    @field_validator("max_bytes")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        return value
+
+    @field_validator("allowed_media_types")
+    @classmethod
+    def media_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if not value:
+            raise ValueError("must not be empty")
+        if any(not item.strip() for item in value):
+            raise ValueError("must not contain empty values")
+        return value
+
+
 class Retry(BaseModel):
     attempts: int
     backoff_seconds: tuple[float, ...]
@@ -116,9 +202,20 @@ class ChatFile(BaseModel):
     conversation: ChatEndpoint
 
 
+class ImageFile(BaseModel):
+    describe: ImageDescribe
+    create: ImageCreate
+
+
+class SpeechFile(BaseModel):
+    transcribe: SpeechTranscribe
+
+
 class FileConfig(BaseModel):
     chat: ChatFile
     embed: Embed
+    image: ImageFile
+    speech: SpeechFile
     retry: Retry
 
 
@@ -126,6 +223,8 @@ class Config(BaseModel):
     env: Env
     chat: ChatFile
     embed: Embed
+    image: ImageFile
+    speech: SpeechFile
     retry: Retry
 
 
@@ -140,4 +239,11 @@ def _load_toml() -> FileConfig:
 @lru_cache
 def get_config() -> Config:
     file_cfg = _load_toml()
-    return Config(env=Env(), chat=file_cfg.chat, embed=file_cfg.embed, retry=file_cfg.retry)
+    return Config(
+        env=Env(),
+        chat=file_cfg.chat,
+        embed=file_cfg.embed,
+        image=file_cfg.image,
+        speech=file_cfg.speech,
+        retry=file_cfg.retry,
+    )

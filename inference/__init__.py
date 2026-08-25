@@ -3,21 +3,39 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import Literal
 
 from config import ChatEndpoint, get_config
 from errors import DwarError, TransportError
 from inference.anthropic import AnthropicAdapter
+from inference.deepgram import DeepgramAdapter
 from inference.gemini import GeminiAdapter
 from inference.openai import OpenAIAdapter
-from inference.types import ChatRequest, ChatResponse, EmbedResult
-from lanes import CONVERSATION_LANE_BLOCK, REASONING_LANE_BLOCK
+from inference.types import (
+    ChatRequest,
+    ChatResponse,
+    CreateResult,
+    DescribeResult,
+    EmbedResult,
+    TranscribeResult,
+)
+from lanes import CONVERSATION_LANE_BLOCK, DESCRIBE_INSTRUCTION, REASONING_LANE_BLOCK
 
 Lane = Literal["reasoning", "conversation"]
 
-_reasoning: AnthropicAdapter | GeminiAdapter | None = None
-_conversation: AnthropicAdapter | GeminiAdapter | None = None
-_embed: OpenAIAdapter | None = None
+
+@dataclass
+class _Adapters:
+    reasoning: AnthropicAdapter | GeminiAdapter
+    conversation: AnthropicAdapter | GeminiAdapter
+    embed: OpenAIAdapter
+    describe: GeminiAdapter
+    create: GeminiAdapter
+    transcribe: DeepgramAdapter
+
+
+_state: _Adapters | None = None
 
 
 def _chat_adapter(endpoint: ChatEndpoint) -> AnthropicAdapter | GeminiAdapter:
@@ -53,21 +71,65 @@ def _embed_adapter() -> OpenAIAdapter:
     )
 
 
+def _describe_adapter() -> GeminiAdapter:
+    cfg = get_config()
+    endpoint = cfg.image.describe
+    if endpoint.provider != "gemini":
+        raise RuntimeError(f"unsupported image describe provider: {endpoint.provider}")
+    return GeminiAdapter(
+        api_key=cfg.env.gemini_api_key,
+        model=endpoint.model,
+        max_tokens=endpoint.max_tokens,
+        timeout_ms=int(cfg.retry.timeout_seconds * 1000),
+    )
+
+
+def _create_adapter() -> GeminiAdapter:
+    cfg = get_config()
+    endpoint = cfg.image.create
+    if endpoint.provider != "gemini":
+        raise RuntimeError(f"unsupported image create provider: {endpoint.provider}")
+    return GeminiAdapter(
+        api_key=cfg.env.gemini_api_key,
+        model=endpoint.model,
+        max_tokens=None,
+        timeout_ms=int(cfg.retry.timeout_seconds * 1000),
+    )
+
+
+def _transcribe_adapter() -> DeepgramAdapter:
+    cfg = get_config()
+    endpoint = cfg.speech.transcribe
+    if endpoint.provider != "deepgram":
+        raise RuntimeError(f"unsupported speech transcribe provider: {endpoint.provider}")
+    return DeepgramAdapter(
+        api_key=cfg.env.deepgram_api_key,
+        model=endpoint.model,
+        language=endpoint.language,
+        timeout_seconds=cfg.retry.timeout_seconds,
+    )
+
+
 def init_adapters() -> None:
     """Construct adapters at startup so a bad provider config fails before serving."""
-    global _reasoning, _conversation, _embed
+    global _state
     cfg = get_config()
-    _reasoning = _chat_adapter(cfg.chat.reasoning)
-    _conversation = _chat_adapter(cfg.chat.conversation)
-    _embed = _embed_adapter()
+    _state = _Adapters(
+        reasoning=_chat_adapter(cfg.chat.reasoning),
+        conversation=_chat_adapter(cfg.chat.conversation),
+        embed=_embed_adapter(),
+        describe=_describe_adapter(),
+        create=_create_adapter(),
+        transcribe=_transcribe_adapter(),
+    )
 
 
-def _adapters() -> tuple[AnthropicAdapter | GeminiAdapter, AnthropicAdapter | GeminiAdapter, OpenAIAdapter]:
-    if _reasoning is None or _conversation is None or _embed is None:
+def _adapters() -> _Adapters:
+    if _state is None:
         init_adapters()
-    if _reasoning is None or _conversation is None or _embed is None:
+    if _state is None:
         raise RuntimeError("inference adapters failed to initialize")
-    return _reasoning, _conversation, _embed
+    return _state
 
 
 def _with_retry(call):
@@ -83,12 +145,28 @@ def _with_retry(call):
 
 
 def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
-    reasoning, conversation, _ = _adapters()
+    adapters = _adapters()
     if lane == "reasoning":
-        return _with_retry(lambda: reasoning.complete(request, REASONING_LANE_BLOCK))
-    return _with_retry(lambda: conversation.complete(request, CONVERSATION_LANE_BLOCK))
+        return _with_retry(lambda: adapters.reasoning.complete(request, REASONING_LANE_BLOCK))
+    return _with_retry(lambda: adapters.conversation.complete(request, CONVERSATION_LANE_BLOCK))
 
 
 def embed(texts: list[str]) -> EmbedResult:
-    _, _, adapter = _adapters()
-    return _with_retry(lambda: adapter.embed(texts))
+    return _with_retry(lambda: _adapters().embed.embed(texts))
+
+
+def describe_image(
+    image: bytes, media_type: str, prompt: str | None
+) -> DescribeResult:
+    instruction = prompt if prompt is not None else DESCRIBE_INSTRUCTION
+    return _with_retry(
+        lambda: _adapters().describe.describe_image(image, media_type, instruction)
+    )
+
+
+def create_image(prompt: str) -> CreateResult:
+    return _with_retry(lambda: _adapters().create.create_image(prompt))
+
+
+def transcribe(audio: bytes, media_type: str) -> TranscribeResult:
+    return _with_retry(lambda: _adapters().transcribe.transcribe(audio, media_type))

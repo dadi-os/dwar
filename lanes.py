@@ -12,3 +12,4 @@ def _load(name: str) -> str:
 
 REASONING_LANE_BLOCK = _load("reasoning.txt")
 CONVERSATION_LANE_BLOCK = _load("conversation.txt")
+DESCRIBE_INSTRUCTION = _load("describe.txt")
