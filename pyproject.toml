@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwar"
+version = "0.1.0"
+description = "Stateless inference gateway for Dadi"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic-settings>=2.6.0",
+    "anthropic>=0.60.0",
+    "google-genai>=1.20.0",
+    "openai>=1.40.0",
+    "httpx>=0.28.0",
+    "httpx2>=2.0.0",
+]
+
+[tool.setuptools]
+py-modules = ["app", "config", "errors", "lanes"]
+
+[tool.setuptools.packages.find]
+include = ["routers*", "inference*"]

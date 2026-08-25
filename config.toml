@@ -1,0 +1,22 @@
+[chat.reasoning]
+provider = "anthropic"
+model = "claude-sonnet-5"
+max_tokens = 16384
+thinking_budget = 4096
+
+[chat.conversation]
+provider = "gemini"
+model = "gemini-3.6-flash"
+max_tokens = 4096
+
+[embed]
+provider = "openai"
+model = "text-embedding-3-small"
+dimensions = 1536
+max_batch_size = 64
+max_text_length = 8192
+
+[retry]
+attempts = 3
+backoff_seconds = [0.5, 1.0, 2.0]
+timeout_seconds = 300
