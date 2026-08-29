@@ -70,7 +70,7 @@ Response:
 }
 ```
 
-`stop_reason` is one of `end_turn`, `tool_use`, `max_tokens`, `error`. Thinking blocks are stripped. Magaj never sees them.
+`stop_reason` is one of `end_turn`, `tool_use`, `max_tokens`, `error`. Thinking blocks are stripped.
 
 ### Embed
 
