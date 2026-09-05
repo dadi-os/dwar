@@ -28,7 +28,7 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Dwar", lifespan=lifespan)
     _install_middleware(app)
     _register_exception_handlers(app)
-    app.include_router(v1_router, prefix="/v1")
+    app.include_router(v1_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

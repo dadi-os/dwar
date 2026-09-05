@@ -9,12 +9,12 @@ Dwar is unauthenticated by design. It lives on a private mesh and must never be 
 | Method | Path | Model |
 | --- | --- | --- |
 | `GET` | `/health` | |
-| `POST` | `/v1/chat/reasoning` | `claude-sonnet-5` |
-| `POST` | `/v1/chat/conversation` | `gemini-3.6-flash` |
-| `POST` | `/v1/embed` | `text-embedding-3-small` |
-| `POST` | `/v1/image/describe` | `gemini-3.6-flash` |
-| `POST` | `/v1/image/create` | `gemini-3.1-flash-image` |
-| `POST` | `/v1/speech/transcribe` | `nova-3` |
+| `POST` | `/chat/reasoning` | `claude-sonnet-5` |
+| `POST` | `/chat/conversation` | `gemini-3.6-flash` |
+| `POST` | `/embed` | `text-embedding-3-small` |
+| `POST` | `/image/describe` | `gemini-3.6-flash` |
+| `POST` | `/image/create` | `gemini-3.1-flash-image` |
+| `POST` | `/speech/transcribe` | `nova-3` |
 
 Unknown top-level fields are a 422. There is no model, temperature, or provider field on any request.
 
