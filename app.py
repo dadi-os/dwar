@@ -6,14 +6,12 @@ from fastapi.responses import JSONResponse
 
 from config import get_config
 from errors import DwarError
-from inference import init_adapters
 from routers.v1 import router as v1_router
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     get_config()
-    init_adapters()
     yield
 
 

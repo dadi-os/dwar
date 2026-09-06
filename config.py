@@ -20,19 +20,10 @@ class Env(BaseSettings):
         extra="ignore",
     )
 
-    anthropic_api_key: str
-    gemini_api_key: str
-    openai_api_key: str
-    deepgram_api_key: str
-
-    @field_validator(
-        "anthropic_api_key", "gemini_api_key", "openai_api_key", "deepgram_api_key"
-    )
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
+    anthropic_api_key: str = ""
+    gemini_api_key: str = ""
+    openai_api_key: str = ""
+    deepgram_api_key: str = ""
 
 
 class ChatEndpoint(BaseModel):

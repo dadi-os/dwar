@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 from typing import Literal
 
 from config import ChatEndpoint, get_config
@@ -25,17 +24,10 @@ from lanes import CONVERSATION_LANE_BLOCK, DESCRIBE_INSTRUCTION, REASONING_LANE_
 Lane = Literal["reasoning", "conversation"]
 
 
-@dataclass
-class _Adapters:
-    reasoning: AnthropicAdapter | GeminiAdapter
-    conversation: AnthropicAdapter | GeminiAdapter
-    embed: OpenAIAdapter
-    describe: GeminiAdapter
-    create: GeminiAdapter
-    transcribe: DeepgramAdapter
-
-
-_state: _Adapters | None = None
+def _require_key(value: str, name: str) -> str:
+    if not value:
+        raise DwarError(503, "provider_unconfigured", f"{name} is not set")
+    return value
 
 
 def _chat_adapter(endpoint: ChatEndpoint) -> AnthropicAdapter | GeminiAdapter:
@@ -43,14 +35,14 @@ def _chat_adapter(endpoint: ChatEndpoint) -> AnthropicAdapter | GeminiAdapter:
     timeout = cfg.retry.timeout_seconds
     if endpoint.provider == "anthropic":
         return AnthropicAdapter(
-            api_key=cfg.env.anthropic_api_key,
+            api_key=_require_key(cfg.env.anthropic_api_key, "ANTHROPIC_API_KEY"),
             model=endpoint.model,
             max_tokens=endpoint.max_tokens,
             timeout_seconds=timeout,
         )
     if endpoint.provider == "gemini":
         return GeminiAdapter(
-            api_key=cfg.env.gemini_api_key,
+            api_key=_require_key(cfg.env.gemini_api_key, "GEMINI_API_KEY"),
             model=endpoint.model,
             max_tokens=endpoint.max_tokens,
             timeout_ms=int(timeout * 1000),
@@ -64,7 +56,7 @@ def _embed_adapter() -> OpenAIAdapter:
     if embed.provider != "openai":
         raise RuntimeError(f"unsupported embed provider: {embed.provider}")
     return OpenAIAdapter(
-        api_key=cfg.env.openai_api_key,
+        api_key=_require_key(cfg.env.openai_api_key, "OPENAI_API_KEY"),
         model=embed.model,
         dimensions=embed.dimensions,
         timeout_seconds=cfg.retry.timeout_seconds,
@@ -77,7 +69,7 @@ def _describe_adapter() -> GeminiAdapter:
     if endpoint.provider != "gemini":
         raise RuntimeError(f"unsupported image describe provider: {endpoint.provider}")
     return GeminiAdapter(
-        api_key=cfg.env.gemini_api_key,
+        api_key=_require_key(cfg.env.gemini_api_key, "GEMINI_API_KEY"),
         model=endpoint.model,
         max_tokens=endpoint.max_tokens,
         timeout_ms=int(cfg.retry.timeout_seconds * 1000),
@@ -90,7 +82,7 @@ def _create_adapter() -> GeminiAdapter:
     if endpoint.provider != "gemini":
         raise RuntimeError(f"unsupported image create provider: {endpoint.provider}")
     return GeminiAdapter(
-        api_key=cfg.env.gemini_api_key,
+        api_key=_require_key(cfg.env.gemini_api_key, "GEMINI_API_KEY"),
         model=endpoint.model,
         max_tokens=None,
         timeout_ms=int(cfg.retry.timeout_seconds * 1000),
@@ -103,33 +95,11 @@ def _transcribe_adapter() -> DeepgramAdapter:
     if endpoint.provider != "deepgram":
         raise RuntimeError(f"unsupported speech transcribe provider: {endpoint.provider}")
     return DeepgramAdapter(
-        api_key=cfg.env.deepgram_api_key,
+        api_key=_require_key(cfg.env.deepgram_api_key, "DEEPGRAM_API_KEY"),
         model=endpoint.model,
         language=endpoint.language,
         timeout_seconds=cfg.retry.timeout_seconds,
     )
-
-
-def init_adapters() -> None:
-    """Construct adapters at startup so a bad provider config fails before serving."""
-    global _state
-    cfg = get_config()
-    _state = _Adapters(
-        reasoning=_chat_adapter(cfg.chat.reasoning),
-        conversation=_chat_adapter(cfg.chat.conversation),
-        embed=_embed_adapter(),
-        describe=_describe_adapter(),
-        create=_create_adapter(),
-        transcribe=_transcribe_adapter(),
-    )
-
-
-def _adapters() -> _Adapters:
-    if _state is None:
-        init_adapters()
-    if _state is None:
-        raise RuntimeError("inference adapters failed to initialize")
-    return _state
 
 
 def _with_retry(call):
@@ -145,14 +115,15 @@ def _with_retry(call):
 
 
 def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
-    adapters = _adapters()
-    if lane == "reasoning":
-        return _with_retry(lambda: adapters.reasoning.complete(request, REASONING_LANE_BLOCK))
-    return _with_retry(lambda: adapters.conversation.complete(request, CONVERSATION_LANE_BLOCK))
+    cfg = get_config()
+    endpoint = cfg.chat.reasoning if lane == "reasoning" else cfg.chat.conversation
+    adapter = _chat_adapter(endpoint)
+    lane_block = REASONING_LANE_BLOCK if lane == "reasoning" else CONVERSATION_LANE_BLOCK
+    return _with_retry(lambda: adapter.complete(request, lane_block))
 
 
 def embed(texts: list[str]) -> EmbedResult:
-    return _with_retry(lambda: _adapters().embed.embed(texts))
+    return _with_retry(lambda: _embed_adapter().embed(texts))
 
 
 def describe_image(
@@ -160,13 +131,13 @@ def describe_image(
 ) -> DescribeResult:
     instruction = prompt if prompt is not None else DESCRIBE_INSTRUCTION
     return _with_retry(
-        lambda: _adapters().describe.describe_image(image, media_type, instruction)
+        lambda: _describe_adapter().describe_image(image, media_type, instruction)
     )
 
 
 def create_image(prompt: str) -> CreateResult:
-    return _with_retry(lambda: _adapters().create.create_image(prompt))
+    return _with_retry(lambda: _create_adapter().create_image(prompt))
 
 
 def transcribe(audio: bytes, media_type: str) -> TranscribeResult:
-    return _with_retry(lambda: _adapters().transcribe.transcribe(audio, media_type))
+    return _with_retry(lambda: _transcribe_adapter().transcribe(audio, media_type))

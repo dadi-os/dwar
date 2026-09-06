@@ -152,13 +152,15 @@ Transport failures (429, 5xx, disconnects, timeouts) are retried with bounded ba
 
 `config.toml` is checked in. It holds model IDs, token limits, thinking budget, size caps, retry, and timeout. Change those in review, not per machine.
 
-`.env` holds provider keys: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`. Host, port, and networks belong in `dadi/docker-compose.yml`, not here.
+`.env` holds provider keys: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`. Host, port, and networking come from Nas.
+
+Dwar boots with no provider keys. Each route requires only its own key and returns `503 provider_unconfigured` naming the missing variable if it is unset. `config.toml` must be present and valid — it is checked in.
 
 Reasoning uses Anthropic Claude Sonnet 5 with adaptive thinking. Conversation and image describe use Gemini 3.6 Flash with thinking held to a minimum. Image create uses Gemini 3.1 Flash Image (Nano Banana 2). Embed uses OpenAI as above. Transcribe uses Deepgram Nova-3.
 
 ## Run locally
 
-Copy `.env.example` to `.env` and fill the four API keys. The process will not start if config.toml or those keys are missing.
+Copy `.env.example` to `.env`. Keys may be left empty; fill them when you need the corresponding routes.
 
 ```sh
 python3 -m venv .venv
