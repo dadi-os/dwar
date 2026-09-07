@@ -96,6 +96,12 @@ class GeminiAdapter:
                     function_declarations=[_to_declaration(tool) for tool in request.tools]
                 )
             ]
+            # Force at least one tool call; text may still accompany it.
+            config_kwargs["tool_config"] = genai_types.ToolConfig(
+                function_calling_config=genai_types.FunctionCallingConfig(
+                    mode=genai_types.FunctionCallingConfigMode.ANY
+                )
+            )
 
         response = self._generate(
             _to_contents(request.messages),
@@ -117,6 +123,7 @@ class GeminiAdapter:
                         id=call.id,
                         name=call.name,
                         input=dict(call.args) if call.args is not None else {},
+                        thought_signature=_encode_thought_signature(part),
                     )
                 )
             elif part.text:
@@ -227,6 +234,30 @@ def _stop_reason(finish_reason: Any, content: list[TextBlock | ToolUseBlock]) ->
     return "error"
 
 
+def _encode_thought_signature(part: Any) -> str | None:
+    raw = getattr(part, "thought_signature", None)
+    if raw is None:
+        return None
+    if isinstance(raw, bytes):
+        return base64.b64encode(raw).decode("ascii")
+    if isinstance(raw, str) and raw:
+        return raw
+    return None
+
+
+def _decode_thought_signature(value: str | None) -> bytes | None:
+    if value is None or value == "":
+        return None
+    try:
+        return base64.b64decode(value, validate=True)
+    except binascii.Error as exc:
+        raise DwarError(
+            422,
+            "invalid_request",
+            "tool_use thought_signature is not valid base64",
+        ) from exc
+
+
 def _to_declaration(tool: Tool) -> genai_types.FunctionDeclaration:
     return genai_types.FunctionDeclaration(
         name=tool.name,
@@ -264,15 +295,17 @@ def _to_parts(
         if isinstance(block, TextBlock):
             parts.append(genai_types.Part.from_text(text=block.text))
         elif isinstance(block, ToolUseBlock):
-            parts.append(
-                genai_types.Part(
-                    function_call=genai_types.FunctionCall(
-                        name=block.name,
-                        args=block.input,
-                        id=block.id,
-                    )
+            part_kwargs: dict[str, Any] = {
+                "function_call": genai_types.FunctionCall(
+                    name=block.name,
+                    args=block.input,
+                    id=block.id,
                 )
-            )
+            }
+            signature = _decode_thought_signature(block.thought_signature)
+            if signature is not None:
+                part_kwargs["thought_signature"] = signature
+            parts.append(genai_types.Part(**part_kwargs))
         else:
             name = names_by_id.get(block.tool_use_id)
             if name is None:

@@ -66,6 +66,8 @@ class AnthropicAdapter:
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
+            # Force at least one tool call; text may still accompany it.
+            kwargs["tool_choice"] = {"type": "any"}
 
         try:
             response = self._client.messages.create(**kwargs)

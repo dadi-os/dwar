@@ -51,7 +51,7 @@ Message `content` is either a string or a list of blocks:
 
 ```json
 { "type": "text", "text": "..." }
-{ "type": "tool_use", "id": "...", "name": "...", "input": {} }
+{ "type": "tool_use", "id": "...", "name": "...", "input": {}, "thought_signature": null }
 { "type": "tool_result", "tool_use_id": "...", "content": "...", "is_error": false }
 ```
 
@@ -70,7 +70,7 @@ Response:
 }
 ```
 
-`stop_reason` is one of `end_turn`, `tool_use`, `max_tokens`, `error`. Thinking blocks are stripped.
+`stop_reason` is one of `end_turn`, `tool_use`, `max_tokens`, `error`. Thinking blocks are stripped. When `tools` is non-empty, Dwar forces at least one tool call (Anthropic `tool_choice: any`, Gemini function-calling mode `ANY`); text may still accompany tool calls. `tool_use` blocks may carry an opaque `thought_signature` (Gemini); clients must round-trip it unchanged on subsequent turns.
 
 ### Embed
 

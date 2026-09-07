@@ -22,6 +22,8 @@ class ToolUseBlock(_Model):
     id: str
     name: str
     input: dict[str, Any]
+    # Opaque provider state (Gemini thought signatures). Round-trip unchanged.
+    thought_signature: str | None = None
 
 
 class ToolResultBlock(_Model):
