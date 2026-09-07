@@ -177,3 +177,7 @@ docker run --env-file .env dwar
 ```
 
 `GET /health` returns `{"status":"ok"}`.
+
+## CD
+
+Push to `main` publishes `ghcr.io/<owner>/dwar` tagged `latest` and the full commit SHA. Publish is gated on CI passing; pull requests never push an image. There is no test suite yet — CI builds the images only.
