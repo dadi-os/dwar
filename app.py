@@ -6,7 +6,10 @@ from fastapi.responses import JSONResponse
 
 from config import get_config
 from errors import DwarError
+from logutil import configure_logging
 from routers.v1 import router as v1_router
+
+configure_logging()
 
 
 @asynccontextmanager

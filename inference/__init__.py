@@ -19,7 +19,7 @@ from inference.types import (
     EmbedResult,
     TranscribeResult,
 )
-from lanes import CONVERSATION_LANE_BLOCK, DESCRIBE_INSTRUCTION, REASONING_LANE_BLOCK
+from lanes import conversation_lane_block, describe_instruction, reasoning_lane_block
 
 Lane = Literal["reasoning", "conversation"]
 
@@ -118,7 +118,9 @@ def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
     cfg = get_config()
     endpoint = cfg.chat.reasoning if lane == "reasoning" else cfg.chat.conversation
     adapter = _chat_adapter(endpoint)
-    lane_block = REASONING_LANE_BLOCK if lane == "reasoning" else CONVERSATION_LANE_BLOCK
+    lane_block = (
+        reasoning_lane_block() if lane == "reasoning" else conversation_lane_block()
+    )
     return _with_retry(lambda: adapter.complete(request, lane_block))
 
 
@@ -129,7 +131,7 @@ def embed(texts: list[str]) -> EmbedResult:
 def describe_image(
     image: bytes, media_type: str, prompt: str | None
 ) -> DescribeResult:
-    instruction = prompt if prompt is not None else DESCRIBE_INSTRUCTION
+    instruction = prompt if prompt is not None else describe_instruction()
     return _with_retry(
         lambda: _describe_adapter().describe_image(image, media_type, instruction)
     )

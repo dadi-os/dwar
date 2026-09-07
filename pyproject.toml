@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-py-modules = ["app", "config", "errors", "lanes"]
+py-modules = ["app", "config", "errors", "lanes", "logutil"]
 
 [tool.setuptools.packages.find]
 include = ["routers*", "inference*"]
