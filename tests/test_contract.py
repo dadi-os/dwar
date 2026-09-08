@@ -92,6 +92,34 @@ def test_request_id_header(client: TestClient) -> None:
     assert response.headers.get("X-Request-Id") == "abc123"
 
 
+def test_image_describe_without_key_provider_unconfigured(client: TestClient) -> None:
+    response = client.post(
+        "/image/describe",
+        json={
+            "image": {
+                "media_type": "image/jpeg",
+                "data": "AAAA",
+            }
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["type"] == "provider_unconfigured"
+
+
+def test_speech_without_key_provider_unconfigured(client: TestClient) -> None:
+    response = client.post(
+        "/speech/transcribe",
+        json={
+            "audio": {
+                "media_type": "audio/wav",
+                "data": "AAAA",
+            }
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["type"] == "provider_unconfigured"
+
+
 def test_json_formatter_includes_code() -> None:
     from logutil import JsonFormatter
     import logging
