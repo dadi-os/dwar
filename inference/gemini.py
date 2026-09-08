@@ -60,18 +60,18 @@ class GeminiAdapter:
             if code in (408, 429):
                 raise TransportError(
                     429 if code == 429 else 504,
-                    "rate_limit" if code == 429 else "timeout",
+                    "rate_limit" if code == 429 else "upstream_timeout",
                     exc.message,
                 ) from exc
             raise DwarError(502, "provider", exc.message) from exc
         except genai_errors.ServerError as exc:
             if exc.code == 504:
-                raise TransportError(504, "timeout", exc.message) from exc
+                raise TransportError(504, "upstream_timeout", exc.message) from exc
             raise TransportError(502, "provider", exc.message) from exc
         except httpx.TimeoutException as exc:
-            raise TransportError(504, "timeout", str(exc)) from exc
+            raise TransportError(504, "upstream_timeout", str(exc)) from exc
         except httpx.RequestError as exc:
-            raise TransportError(502, "connection", str(exc)) from exc
+            raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
     def complete(self, request: ChatRequest, lane_block: str) -> ChatResponse:
         config_kwargs: dict[str, Any] = {

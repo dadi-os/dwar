@@ -74,21 +74,21 @@ class AnthropicAdapter:
         except anthropic.RateLimitError as exc:
             raise TransportError(429, "rate_limit", str(exc)) from exc
         except anthropic.APITimeoutError as exc:
-            raise TransportError(504, "timeout", str(exc)) from exc
+            raise TransportError(504, "upstream_timeout", str(exc)) from exc
         except anthropic.APIConnectionError as exc:
-            raise TransportError(502, "connection", str(exc)) from exc
+            raise TransportError(502, "upstream_unreachable", str(exc)) from exc
         except anthropic.APIStatusError as exc:
             if exc.status_code == 429:
                 raise TransportError(429, "rate_limit", str(exc)) from exc
             if exc.status_code in (408, 504):
-                raise TransportError(504, "timeout", str(exc)) from exc
+                raise TransportError(504, "upstream_timeout", str(exc)) from exc
             if exc.status_code >= 500:
                 raise TransportError(502, "provider", str(exc)) from exc
             raise DwarError(502, "provider", str(exc)) from exc
         except httpx2.TimeoutException as exc:
-            raise TransportError(504, "timeout", str(exc)) from exc
+            raise TransportError(504, "upstream_timeout", str(exc)) from exc
         except httpx2.RequestError as exc:
-            raise TransportError(502, "connection", str(exc)) from exc
+            raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
         content = []
         for block in response.content:

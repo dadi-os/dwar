@@ -19,8 +19,17 @@ dependencies = [
     "httpx2>=2.0.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
 [tool.setuptools]
 py-modules = ["app", "config", "errors", "lanes", "logutil"]
 
 [tool.setuptools.packages.find]
 include = ["routers*", "inference*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

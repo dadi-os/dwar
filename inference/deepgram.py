@@ -45,20 +45,20 @@ class DeepgramAdapter:
             message = _message(exc)
             code = exc.status_code
             if code is None:
-                raise TransportError(502, "connection", message) from exc
+                raise TransportError(502, "upstream_unreachable", message) from exc
             if code == 429:
                 raise TransportError(429, "rate_limit", message) from exc
             if code in (408, 504):
-                raise TransportError(504, "timeout", message) from exc
+                raise TransportError(504, "upstream_timeout", message) from exc
             if code >= 500:
                 raise TransportError(502, "provider", message) from exc
             if code == 400:
                 raise DwarError(422, "invalid_request", message) from exc
             raise DwarError(502, "provider", message) from exc
         except httpx.TimeoutException as exc:
-            raise TransportError(504, "timeout", str(exc)) from exc
+            raise TransportError(504, "upstream_timeout", str(exc)) from exc
         except httpx.RequestError as exc:
-            raise TransportError(502, "connection", str(exc)) from exc
+            raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
         try:
             text = response.results.channels[0].alternatives[0].transcript
