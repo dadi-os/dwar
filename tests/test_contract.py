@@ -78,6 +78,12 @@ def test_lane_prompts_nonempty() -> None:
     assert describe_instruction()
 
 
+def test_conversation_prompt_asks_for_markdown() -> None:
+    text = conversation_lane_block()
+    assert "Markdown" in text
+    assert "dispatch_message" in text
+
+
 def test_config_loads() -> None:
     get_config.cache_clear()
     cfg = get_config()
