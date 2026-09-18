@@ -191,6 +191,7 @@ class Retry(BaseModel):
 class ChatFile(BaseModel):
     reasoning: ChatEndpoint
     conversation: ChatEndpoint
+    complete: ChatEndpoint
 
 
 class ImageFile(BaseModel):

@@ -49,19 +49,21 @@ class AnthropicAdapter:
             timeout=timeout_seconds,
         )
 
-    def complete(self, request: ChatRequest, lane_block: str) -> ChatResponse:
-        kwargs: dict[str, Any] = {
-            "model": self._model,
-            "max_tokens": self._max_tokens,
-            "thinking": {"type": "adaptive"},
-            "system": [
-                {"type": "text", "text": request.system},
+    def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
+        system: list[dict[str, Any]] = [{"type": "text", "text": request.system}]
+        if lane_block is not None:
+            system.append(
                 {
                     "type": "text",
                     "text": lane_block,
                     "cache_control": {"type": "ephemeral"},
-                },
-            ],
+                }
+            )
+        kwargs: dict[str, Any] = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "thinking": {"type": "adaptive"},
+            "system": system,
             "messages": [_to_message(message) for message in request.messages],
         }
         if request.tools:

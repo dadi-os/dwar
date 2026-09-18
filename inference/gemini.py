@@ -73,14 +73,12 @@ class GeminiAdapter:
         except httpx.RequestError as exc:
             raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
-    def complete(self, request: ChatRequest, lane_block: str) -> ChatResponse:
+    def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
+        parts = [genai_types.Part.from_text(text=request.system)]
+        if lane_block is not None:
+            parts.append(genai_types.Part.from_text(text=lane_block))
         config_kwargs: dict[str, Any] = {
-            "system_instruction": genai_types.Content(
-                parts=[
-                    genai_types.Part.from_text(text=request.system),
-                    genai_types.Part.from_text(text=lane_block),
-                ]
-            ),
+            "system_instruction": genai_types.Content(parts=parts),
             "max_output_tokens": self._max_tokens,
             "thinking_config": genai_types.ThinkingConfig(
                 thinking_level=genai_types.ThinkingLevel.MINIMAL,

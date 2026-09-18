@@ -9,6 +9,11 @@ provider = "gemini"
 model = "gemini-3.6-flash"
 max_tokens = 4096
 
+[chat.complete]
+provider = "gemini"
+model = "gemini-3.6-flash"
+max_tokens = 2048
+
 [embed]
 provider = "openai"
 model = "text-embedding-3-small"

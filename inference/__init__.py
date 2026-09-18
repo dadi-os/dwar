@@ -19,7 +19,11 @@ from inference.types import (
     EmbedResult,
     TranscribeResult,
 )
-from lanes import conversation_lane_block, describe_instruction, reasoning_lane_block
+from lanes import (
+    conversation_lane_block,
+    describe_instruction,
+    reasoning_lane_block,
+)
 
 Lane = Literal["reasoning", "conversation"]
 
@@ -116,12 +120,20 @@ def _with_retry(call):
 
 def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
     cfg = get_config()
-    endpoint = cfg.chat.reasoning if lane == "reasoning" else cfg.chat.conversation
+    if lane == "reasoning":
+        endpoint = cfg.chat.reasoning
+        lane_block = reasoning_lane_block()
+    else:
+        endpoint = cfg.chat.conversation
+        lane_block = conversation_lane_block()
     adapter = _chat_adapter(endpoint)
-    lane_block = (
-        reasoning_lane_block() if lane == "reasoning" else conversation_lane_block()
-    )
     return _with_retry(lambda: adapter.complete(request, lane_block))
+
+
+def complete_text(request: ChatRequest) -> ChatResponse:
+    """Run chat with the caller's system prompt only — no Dwar lane block."""
+    adapter = _chat_adapter(get_config().chat.complete)
+    return _with_retry(lambda: adapter.complete(request, None))
 
 
 def embed(texts: list[str]) -> EmbedResult:

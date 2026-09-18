@@ -79,6 +79,7 @@ See nas README for the shared infra catalog.
 | `GET` | `/health` | |
 | `POST` | `/chat/reasoning` | Anthropic (config.toml) |
 | `POST` | `/chat/conversation` | Gemini |
+| `POST` | `/chat/complete` | Gemini |
 | `POST` | `/embed` | OpenAI embeddings |
 | `POST` | `/image/describe` | Gemini |
 | `POST` | `/image/create` | Gemini image |
@@ -88,7 +89,9 @@ Unknown top-level fields are a 422. There is no model, temperature, or provider 
 
 ### Chat
 
-Both chat endpoints share this body:
+`/chat/reasoning` and `/chat/conversation` prepend a Dwar lane prompt to `system`. `/chat/complete` does not — the caller's `system` is the whole instruction.
+
+Chat endpoints share this body:
 
 ```json
 {

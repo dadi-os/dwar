@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from inference import complete_chat
+from inference import complete_chat, complete_text
 from inference.types import ChatRequest as InternalChatRequest
 from inference.types import ChatResponse as InternalChatResponse
 from routers.v1.schemas import ChatRequest, ChatResponse
@@ -24,3 +24,8 @@ def reasoning(body: ChatRequest) -> ChatResponse:
 @router.post("/conversation", response_model=ChatResponse)
 def conversation(body: ChatRequest) -> ChatResponse:
     return _to_http(complete_chat("conversation", _to_internal(body)))
+
+
+@router.post("/complete", response_model=ChatResponse)
+def complete(body: ChatRequest) -> ChatResponse:
+    return _to_http(complete_text(_to_internal(body)))

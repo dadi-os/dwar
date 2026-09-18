@@ -8,7 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from config import get_config
-from lanes import conversation_lane_block, describe_instruction, reasoning_lane_block
+from lanes import (
+    conversation_lane_block,
+    describe_instruction,
+    reasoning_lane_block,
+)
 
 
 @pytest.fixture()
@@ -64,6 +68,20 @@ def test_conversation_without_key_provider_unconfigured(client: TestClient) -> N
     assert "GEMINI_API_KEY" in body["error"]["message"]
 
 
+def test_complete_without_key_provider_unconfigured(client: TestClient) -> None:
+    response = client.post(
+        "/chat/complete",
+        json={
+            "system": "sys",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
+    )
+    assert response.status_code == 503
+    body = response.json()
+    assert body["error"]["type"] == "provider_unconfigured"
+    assert "GEMINI_API_KEY" in body["error"]["message"]
+
+
 def test_embed_without_key_provider_unconfigured(client: TestClient) -> None:
     response = client.post("/embed", json={"texts": ["hello"]})
     assert response.status_code == 503
@@ -82,12 +100,51 @@ def test_conversation_prompt_asks_for_markdown() -> None:
     text = conversation_lane_block()
     assert "Markdown" in text
     assert "dispatch_message" in text
+    assert "route_message" not in text
+
+
+def test_reasoning_prompt_has_no_router_branch() -> None:
+    text = reasoning_lane_block()
+    assert "route_message" not in text
+    assert "router" not in text
+
+
+def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    from inference import complete_text
+    from inference.types import ChatRequest, ChatResponse, TextBlock, Usage
+
+    seen: dict[str, object] = {}
+
+    class _Adapter:
+        def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
+            seen["lane_block"] = lane_block
+            return ChatResponse(
+                content=[TextBlock(type="text", text="ok")],
+                stop_reason="end_turn",
+                usage=Usage(input_tokens=1, output_tokens=1),
+            )
+
+    monkeypatch.setattr("inference._chat_adapter", lambda endpoint: _Adapter())
+    monkeypatch.setattr("inference._with_retry", lambda call: call())
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    get_config.cache_clear()
+
+    response = complete_text(
+        ChatRequest(
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    )
+    assert response.stop_reason == "end_turn"
+    assert "lane_block" in seen
+    assert seen["lane_block"] is None
 
 
 def test_config_loads() -> None:
     get_config.cache_clear()
     cfg = get_config()
     assert cfg.chat.reasoning.provider == "anthropic"
+    assert cfg.chat.complete.provider == "gemini"
     assert cfg.embed.dimensions > 0
     assert cfg.retry.attempts >= 1
 
