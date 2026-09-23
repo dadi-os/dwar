@@ -100,6 +100,8 @@ def test_conversation_prompt_asks_for_markdown() -> None:
     text = conversation_lane_block()
     assert "Markdown" in text
     assert "dispatch_message" in text
+    assert "steer_reasoning" in text
+    assert "terminate" in text
     assert "route_message" not in text
     assert "kebab-case" in text
     assert "parent" in text
@@ -110,6 +112,8 @@ def test_reasoning_prompt_has_no_router_branch() -> None:
     text = reasoning_lane_block()
     assert "route_message" not in text
     assert "router" not in text
+    assert "send_message" in text
+    assert "Do not invent tool names" in text or "do not invent tool names" in text.lower()
 
 
 def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -> None:
