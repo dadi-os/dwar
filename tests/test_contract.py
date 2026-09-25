@@ -105,7 +105,7 @@ def test_conversation_prompt_asks_for_markdown() -> None:
     assert "route_message" not in text
     assert "kebab-case" in text
     assert "parent" in text
-    assert "routing block" in text
+    assert "point of contact" in text
 
 
 def test_reasoning_prompt_has_no_router_branch() -> None:
