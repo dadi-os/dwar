@@ -24,7 +24,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
     get_config.cache_clear()
     from app import create_app
 
-    return TestClient(create_app())
+    return TestClient(create_app(), headers={"X-Dadi-Caller": "tests/contract"})
 
 
 def test_health(client: TestClient) -> None:
@@ -116,11 +116,9 @@ def test_reasoning_prompt_has_no_router_branch() -> None:
     assert "Do not invent tool names" in text or "do not invent tool names" in text.lower()
 
 
-def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -> None:
-    from inference import complete_text
+def _fake_chat_adapter(seen: dict[str, object]):
+    """Chat adapter stub that records the lane block and returns fixed usage including cache tokens."""
     from inference.types import ChatRequest, ChatResponse, TextBlock, Usage
-
-    seen: dict[str, object] = {}
 
     class _Adapter:
         def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
@@ -128,13 +126,29 @@ def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -
             return ChatResponse(
                 content=[TextBlock(type="text", text="ok")],
                 stop_reason="end_turn",
-                usage=Usage(input_tokens=1, output_tokens=1),
+                usage=Usage(
+                    input_tokens=11,
+                    output_tokens=7,
+                    cache_read_input_tokens=900,
+                    cache_creation_input_tokens=40,
+                ),
             )
 
-    monkeypatch.setattr("inference._chat_adapter", lambda endpoint: _Adapter())
+    return _Adapter()
+
+
+def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    from inference import complete_text
+    from inference.types import ChatRequest
+    from logutil import caller_var, request_id_var
+
+    seen: dict[str, object] = {}
+    monkeypatch.setattr("inference._chat_adapter", lambda endpoint: _fake_chat_adapter(seen))
     monkeypatch.setattr("inference._with_retry", lambda call: call())
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     get_config.cache_clear()
+    caller_var.set("tests/direct")
+    request_id_var.set("req-direct")
 
     response = complete_text(
         ChatRequest(
@@ -211,3 +225,107 @@ def test_json_formatter_includes_code() -> None:
     assert payload["code"] == "provider_unconfigured"
     assert payload["request_id"] == "req1"
     assert payload["level"] == "error"
+
+
+def test_inference_requires_caller_header(client: TestClient) -> None:
+    response = client.post(
+        "/chat/complete",
+        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Dadi-Caller": ""},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["type"] == "invalid_request"
+
+    bare = TestClient(client.app)
+    response = bare.post(
+        "/chat/complete",
+        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["type"] == "invalid_request"
+
+
+def test_inference_log_line_attributes_cost(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    seen: dict[str, object] = {}
+    monkeypatch.setattr("inference._chat_adapter", lambda endpoint: _fake_chat_adapter(seen))
+    caplog.set_level("INFO", logger="dwar")
+
+    response = client.post(
+        "/chat/complete",
+        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+        headers={"X-Dadi-Caller": "dimaag/browser-manager", "X-Request-Id": "req-42"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["usage"]["cache_read_input_tokens"] == 900
+    lines = [r for r in caplog.records if r.getMessage() == "inference"]
+    assert len(lines) == 1
+    line = lines[0]
+    assert line.caller == "dimaag/browser-manager"
+    assert line.request_id == "req-42"
+    assert line.route == "chat.complete"
+    assert (line.input_tokens, line.output_tokens) == (11, 7)
+    assert (line.cache_read_input_tokens, line.cache_creation_input_tokens) == (900, 40)
+
+
+def test_healthy_health_checks_are_not_logged(
+    client: TestClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("INFO", logger="dwar")
+    client.get("/health")
+    client.post("/embed", json={"texts": []})
+    paths = [getattr(r, "path", None) for r in caplog.records if r.getMessage() == "request"]
+    assert "/health" not in paths
+    assert "/embed" in paths
+
+
+def test_anthropic_caches_history_and_reports_cache_usage() -> None:
+    from types import SimpleNamespace
+
+    from inference.anthropic import AnthropicAdapter
+    from inference.types import ChatRequest
+
+    sent: dict[str, object] = {}
+
+    def create(**kwargs: object) -> SimpleNamespace:
+        sent.update(kwargs)
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="tool_use", id="t1", name="yield", input={})],
+            stop_reason="tool_use",
+            usage=SimpleNamespace(
+                input_tokens=12,
+                output_tokens=30,
+                cache_read_input_tokens=5000,
+                cache_creation_input_tokens=None,
+            ),
+        )
+
+    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, timeout_seconds=1)
+    adapter._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    request = ChatRequest.model_validate(
+        {
+            "system": "sys",
+            "messages": [
+                {"role": "user", "content": "[From: Ankur]\\nfind Oliver"},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "t0", "name": "wait", "input": {}}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "t0", "content": "done"}],
+                },
+            ],
+        }
+    )
+
+    response = adapter.complete(request, "lane doctrine")
+
+    messages = sent["messages"]
+    assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    assert all("cache_control" not in block for m in messages[:-1] for block in (m["content"] if isinstance(m["content"], list) else []))
+    assert messages[0]["content"] == "[From: Ankur]\\nfind Oliver"
+    assert response.usage.cache_read_input_tokens == 5000
+    assert response.usage.cache_creation_input_tokens == 0

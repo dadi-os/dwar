@@ -64,7 +64,9 @@ class AnthropicAdapter:
             "max_tokens": self._max_tokens,
             "thinking": {"type": "adaptive"},
             "system": system,
-            "messages": [_to_message(message) for message in request.messages],
+            "messages": _with_history_breakpoint(
+                [_to_message(message) for message in request.messages]
+            ),
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
@@ -116,8 +118,28 @@ class AnthropicAdapter:
             usage=Usage(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
+                cache_read_input_tokens=usage.cache_read_input_tokens or 0,
+                cache_creation_input_tokens=usage.cache_creation_input_tokens or 0,
             ),
         )
+
+
+def _with_history_breakpoint(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Mark the last message block as a cache breakpoint.
+
+    Agent loops resend the whole history every step; the breakpoint lets the next
+    step read everything up to here from cache instead of paying full input price.
+    """
+    if not messages:
+        return messages
+    last = messages[-1]
+    content = last["content"]
+    if isinstance(content, str):
+        blocks: list[dict[str, Any]] = [{"type": "text", "text": content}]
+    else:
+        blocks = [dict(block) for block in content]
+    blocks[-1]["cache_control"] = {"type": "ephemeral"}
+    return [*messages[:-1], {"role": last["role"], "content": blocks}]
 
 
 def _to_tool(tool: Tool) -> dict[str, Any]:

@@ -57,7 +57,11 @@ Concurrency cancels superseded runs on the same ref.
 
 ## Logging / error codes
 
-Logs follow the nas JSON contract (`time`, `level`, `service=dwar`, `msg`, plus `code`, `request_id`, request summary fields). Uvicorn access logs are disabled; one structured request line per call is emitted instead.
+Logs follow the nas JSON contract (`time`, `level`, `service=dwar`, `msg`, plus `code`, `request_id`, request summary fields). Uvicorn access logs are disabled; one structured `request` line per call is emitted instead (healthy `/health` probes are not logged).
+
+Every served inference call also emits one `inference` line: `caller`, `route` (`chat.reasoning`, `chat.conversation`, `chat.complete`, `embed`, `image.describe`, `image.create`, `speech.transcribe`), `provider`, `model`, `duration_ms`, `request_id`, and the call's cost fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `stop_reason`; `audio_seconds` for speech). Prompt and response content are never logged. Dwar stays stateless — cost reporting is a LogQL query over these lines in Loki.
+
+Every route except `/health` requires `X-Dadi-Caller` naming the service and actor that pays for the call (`dimaag/<agent id>`, `dimaag/dadi`, `yaad/ingest`, …); missing or blank is `invalid_request` (422).
 
 HTTP errors: `{ "error": { "type": "<code>", "message": "..." } }`.
 
@@ -120,11 +124,16 @@ Response:
     { "type": "tool_use", "id": "...", "name": "...", "input": {} }
   ],
   "stop_reason": "end_turn",
-  "usage": { "input_tokens": 0, "output_tokens": 0 }
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 0
+  }
 }
 ```
 
-`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. Thinking blocks are stripped. Non-empty `tools` forces at least one tool call.
+`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. Thinking blocks are stripped. Non-empty `tools` forces at least one tool call. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
 
 ### Embed
 

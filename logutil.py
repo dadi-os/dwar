@@ -1,7 +1,8 @@
 """JSON stdout logging aligned with the nas contract.
 
 Fields: time (RFC3339), level, service, msg; optional code, request_id,
-method, path, status, duration_ms.
+method, path, status, duration_ms, and the per-call inference fields (caller,
+route, provider, model, token counts, stop_reason, audio_seconds).
 """
 
 from __future__ import annotations
@@ -9,8 +10,16 @@ from __future__ import annotations
 import json
 import logging
 import sys
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
+
+
+request_id_var: ContextVar[str] = ContextVar("request_id")
+"""Request id of the HTTP request being served; set by the request middleware."""
+
+caller_var: ContextVar[str] = ContextVar("caller")
+"""X-Dadi-Caller of the HTTP request being served; set by the v1 router dependency."""
 
 
 class JsonFormatter(logging.Formatter):
@@ -38,6 +47,16 @@ class JsonFormatter(logging.Formatter):
             "path",
             "status",
             "duration_ms",
+            "caller",
+            "route",
+            "provider",
+            "model",
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "stop_reason",
+            "audio_seconds",
         ):
             value = getattr(record, key, None)
             if value is not None:

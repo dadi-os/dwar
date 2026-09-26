@@ -20,10 +20,7 @@ def describe(body: DescribeRequest) -> DescribeResponse:
     result = describe_image(body.image.decoded(), body.image.media_type, body.prompt)
     return DescribeResponse(
         description=result.description,
-        usage=Usage(
-            input_tokens=result.usage.input_tokens,
-            output_tokens=result.usage.output_tokens,
-        ),
+        usage=Usage.model_validate(result.usage.model_dump()),
     )
 
 
@@ -35,8 +32,5 @@ def create(body: CreateRequest) -> CreateResponse:
             media_type=result.media_type,
             data=base64.b64encode(result.image).decode("ascii"),
         ),
-        usage=Usage(
-            input_tokens=result.usage.input_tokens,
-            output_tokens=result.usage.output_tokens,
-        ),
+        usage=Usage.model_validate(result.usage.model_dump()),
     )

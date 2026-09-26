@@ -217,6 +217,8 @@ def _usage(response: Any) -> Usage:
     return Usage(
         input_tokens=usage_meta.prompt_token_count,
         output_tokens=usage_meta.candidates_token_count + thoughts,
+        cache_read_input_tokens=usage_meta.cached_content_token_count or 0,
+        cache_creation_input_tokens=0,
     )
 
 

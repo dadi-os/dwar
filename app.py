@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, Response
 
 from config import get_config
 from errors import DwarError
-from logutil import configure_logging, log_extra
+from logutil import configure_logging, log_extra, request_id_var
 from routers.v1 import router as v1_router
 
 configure_logging()
@@ -44,6 +44,7 @@ def _install_middleware(app: FastAPI) -> None:
     @app.middleware("http")
     async def request_log(request: Request, call_next) -> Response:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+        request_id_var.set(request_id)
         start = time.perf_counter()
         response: Response | None = None
         try:
@@ -51,25 +52,31 @@ def _install_middleware(app: FastAPI) -> None:
             return response
         finally:
             status = response.status_code if response is not None else 500
-            duration_ms = int((time.perf_counter() - start) * 1000)
-            level = logging.INFO
-            if status >= 500:
-                level = logging.ERROR
-            elif status >= 400:
-                level = logging.WARNING
-            logger.log(
-                level,
-                "request",
-                extra=log_extra(
-                    request_id=request_id,
-                    method=request.method,
-                    path=request.url.path,
-                    status=status,
-                    duration_ms=duration_ms,
-                ),
-            )
             if response is not None:
                 response.headers["X-Request-Id"] = request_id
+            if not (request.url.path == "/health" and status == 200):
+                _log_request(request, request_id, status, start)
+
+
+def _log_request(request: Request, request_id: str, status: int, start: float) -> None:
+    """Emit the one structured `request` summary line for a served HTTP call."""
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    level = logging.INFO
+    if status >= 500:
+        level = logging.ERROR
+    elif status >= 400:
+        level = logging.WARNING
+    logger.log(
+        level,
+        "request",
+        extra=log_extra(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            status=status,
+            duration_ms=duration_ms,
+        ),
+    )
 
 
 def _register_exception_handlers(app: FastAPI) -> None:

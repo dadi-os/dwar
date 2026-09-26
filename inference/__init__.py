@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Literal
 
@@ -24,8 +25,27 @@ from lanes import (
     describe_instruction,
     reasoning_lane_block,
 )
+from logutil import caller_var, log_extra, request_id_var
 
 Lane = Literal["reasoning", "conversation"]
+
+logger = logging.getLogger("dwar")
+
+
+def _log_inference(route: str, provider: str, model: str, started: float, **fields: object) -> None:
+    """Emit one `inference` line per served call: who asked, which model, what it cost."""
+    logger.info(
+        "inference",
+        extra=log_extra(
+            request_id=request_id_var.get(),
+            caller=caller_var.get(),
+            route=route,
+            provider=provider,
+            model=model,
+            duration_ms=int((time.perf_counter() - started) * 1000),
+            **fields,
+        ),
+    )
 
 
 def _require_key(value: str, name: str) -> str:
@@ -126,32 +146,70 @@ def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
     else:
         endpoint = cfg.chat.conversation
         lane_block = conversation_lane_block()
-    adapter = _chat_adapter(endpoint)
-    return _with_retry(lambda: adapter.complete(request, lane_block))
+    return _logged_chat(f"chat.{lane}", endpoint, request, lane_block)
 
 
 def complete_text(request: ChatRequest) -> ChatResponse:
     """Run chat with the caller's system prompt only — no Dwar lane block."""
-    adapter = _chat_adapter(get_config().chat.complete)
-    return _with_retry(lambda: adapter.complete(request, None))
+    return _logged_chat("chat.complete", get_config().chat.complete, request, None)
+
+
+def _logged_chat(
+    route: str, endpoint: ChatEndpoint, request: ChatRequest, lane_block: str | None
+) -> ChatResponse:
+    """Run one chat call with retries on the endpoint's provider and log its usage."""
+    adapter = _chat_adapter(endpoint)
+    started = time.perf_counter()
+    response = _with_retry(lambda: adapter.complete(request, lane_block))
+    _log_inference(
+        route,
+        endpoint.provider,
+        endpoint.model,
+        started,
+        stop_reason=response.stop_reason,
+        **response.usage.model_dump(),
+    )
+    return response
 
 
 def embed(texts: list[str]) -> EmbedResult:
-    return _with_retry(lambda: _embed_adapter().embed(texts))
+    endpoint = get_config().embed
+    started = time.perf_counter()
+    result = _with_retry(lambda: _embed_adapter().embed(texts))
+    _log_inference("embed", endpoint.provider, endpoint.model, started, input_tokens=result.input_tokens)
+    return result
 
 
 def describe_image(
     image: bytes, media_type: str, prompt: str | None
 ) -> DescribeResult:
     instruction = prompt if prompt is not None else describe_instruction()
-    return _with_retry(
+    endpoint = get_config().image.describe
+    started = time.perf_counter()
+    result = _with_retry(
         lambda: _describe_adapter().describe_image(image, media_type, instruction)
     )
+    _log_inference("image.describe", endpoint.provider, endpoint.model, started, **result.usage.model_dump())
+    return result
 
 
 def create_image(prompt: str) -> CreateResult:
-    return _with_retry(lambda: _create_adapter().create_image(prompt))
+    endpoint = get_config().image.create
+    started = time.perf_counter()
+    result = _with_retry(lambda: _create_adapter().create_image(prompt))
+    _log_inference("image.create", endpoint.provider, endpoint.model, started, **result.usage.model_dump())
+    return result
 
 
 def transcribe(audio: bytes, media_type: str) -> TranscribeResult:
-    return _with_retry(lambda: _transcribe_adapter().transcribe(audio, media_type))
+    endpoint = get_config().speech.transcribe
+    started = time.perf_counter()
+    result = _with_retry(lambda: _transcribe_adapter().transcribe(audio, media_type))
+    _log_inference(
+        "speech.transcribe",
+        endpoint.provider,
+        endpoint.model,
+        started,
+        audio_seconds=result.duration_seconds,
+    )
+    return result
