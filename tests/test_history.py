@@ -52,6 +52,7 @@ def test_anthropic_returns_thinking_text_and_tool_in_one_turn() -> None:
     response = adapter.complete(request, "lane")
 
     assert sent["tool_choice"] == {"type": "auto"}
+    assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
     assert response.provider == "anthropic"
     assert [block.type for block in response.content] == ["thinking", "text", "tool_use"]
     assert response.content[0].signature == "sig-1"

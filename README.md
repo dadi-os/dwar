@@ -140,7 +140,7 @@ Response:
 }
 ```
 
-`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic thinking, or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
+`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic adaptive thinking requested with `display: "summarized"`, since current Claude models return empty thinking text by default; or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
 
 ### Embed
 

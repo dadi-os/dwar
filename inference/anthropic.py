@@ -64,7 +64,7 @@ class AnthropicAdapter:
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
-            "thinking": {"type": "adaptive"},
+            "thinking": {"type": "adaptive", "display": "summarized"},
             "system": system,
             "messages": _with_history_breakpoint(
                 [_to_message(message) for message in _shape_history(request.messages)]
