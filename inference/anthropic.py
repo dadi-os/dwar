@@ -8,14 +8,18 @@ import anthropic
 import httpx2
 
 from errors import DwarError, TransportError
+from inference.history import foreign_turns_as_text, merge_turns
 from inference.types import (
     ChatRequest,
     ChatResponse,
+    ContentBlock,
     Message,
+    RedactedThinkingBlock,
+    ResponseBlock,
     StopReason,
     TextBlock,
+    ThinkingBlock,
     Tool,
-    ToolResultBlock,
     ToolUseBlock,
     Usage,
 )
@@ -28,8 +32,6 @@ _STOP_REASONS: dict[str, StopReason] = {
     "pause_turn": "end_turn",
     "refusal": "error",
 }
-
-_THINKING_TYPES = {"thinking", "redacted_thinking"}
 
 
 class AnthropicAdapter:
@@ -65,13 +67,12 @@ class AnthropicAdapter:
             "thinking": {"type": "adaptive"},
             "system": system,
             "messages": _with_history_breakpoint(
-                [_to_message(message) for message in request.messages]
+                [_to_message(message) for message in _shape_history(request.messages)]
             ),
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
-            # Force at least one tool call; text may still accompany it.
-            kwargs["tool_choice"] = {"type": "any"}
+            kwargs["tool_choice"] = {"type": request.tool_choice}
 
         try:
             response = self._client.messages.create(**kwargs)
@@ -94,11 +95,15 @@ class AnthropicAdapter:
         except httpx2.RequestError as exc:
             raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
-        content = []
+        content: list[ResponseBlock] = []
         for block in response.content:
-            if block.type in _THINKING_TYPES:
-                continue
-            if block.type == "text":
+            if block.type == "thinking":
+                content.append(
+                    ThinkingBlock(type="thinking", thinking=block.thinking, signature=block.signature)
+                )
+            elif block.type == "redacted_thinking":
+                content.append(RedactedThinkingBlock(type="redacted_thinking", data=block.data))
+            elif block.type == "text":
                 content.append(TextBlock(type="text", text=block.text))
             elif block.type == "tool_use":
                 content.append(
@@ -113,6 +118,7 @@ class AnthropicAdapter:
         stop = _STOP_REASONS.get(response.stop_reason or "", "error")
         usage = response.usage
         return ChatResponse(
+            provider="anthropic",
             content=content,
             stop_reason=stop,
             usage=Usage(
@@ -142,6 +148,15 @@ def _with_history_breakpoint(messages: list[dict[str, Any]]) -> list[dict[str, A
     return [*messages[:-1], {"role": last["role"], "content": blocks}]
 
 
+def _shape_history(messages: list[Message]) -> list[Message]:
+    """Keep Anthropic's own turns verbatim (thinking must be replayed unchanged
+    inside a tool loop); Anthropic cannot validate another provider's tool calls
+    or thinking, so those turns become labelled text."""
+    return merge_turns(
+        foreign_turns_as_text(messages, "anthropic"), split_before_thinking=True
+    )
+
+
 def _to_tool(tool: Tool) -> dict[str, Any]:
     return {
         "name": tool.name,
@@ -159,9 +174,15 @@ def _to_message(message: Message) -> dict[str, Any]:
     }
 
 
-def _to_block(block: TextBlock | ToolUseBlock | ToolResultBlock) -> dict[str, Any]:
+def _to_block(block: ContentBlock) -> dict[str, Any]:
     if isinstance(block, TextBlock):
         return {"type": "text", "text": block.text}
+    if isinstance(block, ThinkingBlock):
+        if block.signature is None:
+            raise DwarError(422, "invalid_request", "anthropic thinking block is missing its signature")
+        return {"type": "thinking", "thinking": block.thinking, "signature": block.signature}
+    if isinstance(block, RedactedThinkingBlock):
+        return {"type": "redacted_thinking", "data": block.data}
     if isinstance(block, ToolUseBlock):
         return {
             "type": "tool_use",

@@ -109,21 +109,28 @@ Chat endpoints share this body:
       "description": "what it does",
       "input_schema": { "type": "object", "properties": {}, "required": [] }
     }
-  ]
+  ],
+  "tool_choice": "auto"
 }
 ```
 
-`tools` may be omitted or empty. Message `content` is a string or a list of `text` / `tool_use` / `tool_result` blocks. `tool_use` only on `assistant`; `tool_result` only on `user`.
+`tools` may be omitted or empty. `tool_choice` is required: `auto` lets the model think and write before, alongside, or instead of a tool call; `any` forces a tool call every turn, which leaves no room to think (use it for one-shot structured extraction, not agent loops).
+
+Message `content` is a string or a list of `text` / `thinking` / `redacted_thinking` / `tool_use` / `tool_result` blocks. `thinking`, `redacted_thinking` and `tool_use` only on `assistant`; `tool_result` only on `user`. An assistant message may carry `provider` (`anthropic` | `gemini`) and `lane` (`reasoning` | `conversation`) naming who produced it; send back exactly what a response returned, with its `provider`.
+
+Each adapter replays its own provider's turns verbatim — thinking and signatures included, as Anthropic requires inside a tool loop — and translates the other provider's turns: Anthropic sees them as labelled text (`[conversation lane thinking]`, `[conversation lane called steer_reasoning] {…}`, and the matching results), Gemini sees the other provider's thinking as labelled text and its tool calls as function calls carrying Google's `skip_thought_signature_validator` placeholder signature. Consecutive same-role turns are merged (tool results first); an assistant turn that opens with thinking stays whole behind a `[continue]` user turn.
 
 Response:
 
 ```json
 {
+  "provider": "anthropic",
   "content": [
+    { "type": "thinking", "thinking": "...", "signature": "..." },
     { "type": "text", "text": "..." },
     { "type": "tool_use", "id": "...", "name": "...", "input": {} }
   ],
-  "stop_reason": "end_turn",
+  "stop_reason": "tool_use",
   "usage": {
     "input_tokens": 0,
     "output_tokens": 0,
@@ -133,7 +140,7 @@ Response:
 }
 ```
 
-`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. Thinking blocks are stripped. Non-empty `tools` forces at least one tool call. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
+`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic thinking, or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
 
 ### Embed
 

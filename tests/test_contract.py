@@ -45,6 +45,7 @@ def test_reasoning_without_key_provider_unconfigured(client: TestClient) -> None
         "/chat/reasoning",
         json={
             "system": "sys",
+            "tool_choice": "auto",
             "messages": [{"role": "user", "content": "hi"}],
         },
     )
@@ -59,6 +60,7 @@ def test_conversation_without_key_provider_unconfigured(client: TestClient) -> N
         "/chat/conversation",
         json={
             "system": "sys",
+            "tool_choice": "auto",
             "messages": [{"role": "user", "content": "hi"}],
         },
     )
@@ -73,6 +75,7 @@ def test_complete_without_key_provider_unconfigured(client: TestClient) -> None:
         "/chat/complete",
         json={
             "system": "sys",
+            "tool_choice": "auto",
             "messages": [{"role": "user", "content": "hi"}],
         },
     )
@@ -124,6 +127,7 @@ def _fake_chat_adapter(seen: dict[str, object]):
         def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
             seen["lane_block"] = lane_block
             return ChatResponse(
+                provider="gemini",
                 content=[TextBlock(type="text", text="ok")],
                 stop_reason="end_turn",
                 usage=Usage(
@@ -153,6 +157,7 @@ def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -
     response = complete_text(
         ChatRequest(
             system="sys",
+            tool_choice="auto",
             messages=[{"role": "user", "content": "hi"}],
         )
     )
@@ -230,7 +235,11 @@ def test_json_formatter_includes_code() -> None:
 def test_inference_requires_caller_header(client: TestClient) -> None:
     response = client.post(
         "/chat/complete",
-        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+        json={
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
         headers={"X-Dadi-Caller": ""},
     )
     assert response.status_code == 422
@@ -239,7 +248,11 @@ def test_inference_requires_caller_header(client: TestClient) -> None:
     bare = TestClient(client.app)
     response = bare.post(
         "/chat/complete",
-        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+        json={
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
     )
     assert response.status_code == 422
     assert response.json()["error"]["type"] == "invalid_request"
@@ -254,7 +267,11 @@ def test_inference_log_line_attributes_cost(
 
     response = client.post(
         "/chat/complete",
-        json={"system": "sys", "messages": [{"role": "user", "content": "hi"}]},
+        json={
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [{"role": "user", "content": "hi"}],
+        },
         headers={"X-Dadi-Caller": "dimaag/browser-manager", "X-Request-Id": "req-42"},
     )
 
@@ -307,6 +324,7 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
     request = ChatRequest.model_validate(
         {
             "system": "sys",
+            "tool_choice": "auto",
             "messages": [
                 {"role": "user", "content": "[From: Ankur]\\nfind Oliver"},
                 {

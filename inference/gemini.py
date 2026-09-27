@@ -12,19 +12,33 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from errors import DwarError, TransportError
+from inference.history import is_foreign, merge_turns, thinking_as_text
 from inference.types import (
     ChatRequest,
     ChatResponse,
     CreateResult,
     DescribeResult,
     Message,
+    RedactedThinkingBlock,
+    ResponseBlock,
     StopReason,
     TextBlock,
+    ThinkingBlock,
     Tool,
     ToolResultBlock,
     ToolUseBlock,
     Usage,
 )
+
+# Gemini 3 validates the thought signature on every function call in history.
+# A call another provider made has none, so it carries Google's documented
+# placeholder, which tells Gemini to skip validation for that call.
+_SKIP_SIGNATURE = base64.urlsafe_b64decode("skip_thought_signature_validator")
+
+_FUNCTION_CALLING_MODES = {
+    "auto": genai_types.FunctionCallingConfigMode.AUTO,
+    "any": genai_types.FunctionCallingConfigMode.ANY,
+}
 
 
 class GeminiAdapter:
@@ -82,7 +96,7 @@ class GeminiAdapter:
             "max_output_tokens": self._max_tokens,
             "thinking_config": genai_types.ThinkingConfig(
                 thinking_level=genai_types.ThinkingLevel.MINIMAL,
-                include_thoughts=False,
+                include_thoughts=True,
             ),
             "automatic_function_calling": genai_types.AutomaticFunctionCallingConfig(
                 disable=True
@@ -94,10 +108,9 @@ class GeminiAdapter:
                     function_declarations=[_to_declaration(tool) for tool in request.tools]
                 )
             ]
-            # Force at least one tool call; text may still accompany it.
             config_kwargs["tool_config"] = genai_types.ToolConfig(
                 function_calling_config=genai_types.FunctionCallingConfig(
-                    mode=genai_types.FunctionCallingConfigMode.ANY
+                    mode=_FUNCTION_CALLING_MODES[request.tool_choice]
                 )
             )
 
@@ -107,9 +120,16 @@ class GeminiAdapter:
         )
         parts = _candidate_parts(response)
 
-        content = []
+        content: list[ResponseBlock] = []
         for part in parts:
             if getattr(part, "thought", False):
+                content.append(
+                    ThinkingBlock(
+                        type="thinking",
+                        thinking=part.text or "",
+                        signature=_encode_thought_signature(part),
+                    )
+                )
                 continue
             if part.function_call:
                 call = part.function_call
@@ -125,9 +145,16 @@ class GeminiAdapter:
                     )
                 )
             elif part.text:
-                content.append(TextBlock(type="text", text=part.text))
+                content.append(
+                    TextBlock(
+                        type="text",
+                        text=part.text,
+                        thought_signature=_encode_thought_signature(part),
+                    )
+                )
 
         return ChatResponse(
+            provider="gemini",
             content=content,
             stop_reason=_stop_reason(_finish_reason(response), content),
             usage=_usage(response),
@@ -222,7 +249,7 @@ def _usage(response: Any) -> Usage:
     )
 
 
-def _stop_reason(finish_reason: Any, content: list[TextBlock | ToolUseBlock]) -> StopReason:
+def _stop_reason(finish_reason: Any, content: list[ResponseBlock]) -> StopReason:
     if any(isinstance(block, ToolUseBlock) for block in content):
         return "tool_use"
     raw = getattr(finish_reason, "name", None) or str(finish_reason or "")
@@ -267,8 +294,9 @@ def _to_declaration(tool: Tool) -> genai_types.FunctionDeclaration:
 
 
 def _to_contents(messages: list[Message]) -> list[genai_types.Content]:
+    shaped = merge_turns(messages, split_before_thinking=False)
     names_by_id: dict[str, str] = {}
-    for message in messages:
+    for message in shaped:
         if isinstance(message.content, str):
             continue
         for block in message.content:
@@ -276,7 +304,7 @@ def _to_contents(messages: list[Message]) -> list[genai_types.Content]:
                 names_by_id[block.id] = block.name
 
     contents: list[genai_types.Content] = []
-    for message in messages:
+    for message in shaped:
         role = "model" if message.role == "assistant" else "user"
         contents.append(
             genai_types.Content(role=role, parts=_to_parts(message, names_by_id))
@@ -287,26 +315,44 @@ def _to_contents(messages: list[Message]) -> list[genai_types.Content]:
 def _to_parts(
     message: Message, names_by_id: dict[str, str]
 ) -> list[genai_types.Part]:
+    """_to_parts converts one message to Gemini parts. Gemini's own turns replay
+    verbatim, thoughts and signatures included. Another provider's thinking
+    becomes labelled text (Gemini cannot use it as a thought), its redacted
+    thinking is dropped (nothing readable), and its tool calls carry the
+    placeholder signature."""
     if isinstance(message.content, str):
         return [genai_types.Part.from_text(text=message.content)]
 
+    foreign = is_foreign(message, "gemini")
     parts: list[genai_types.Part] = []
     for block in message.content:
         if isinstance(block, TextBlock):
-            parts.append(genai_types.Part.from_text(text=block.text))
+            parts.append(_signed(genai_types.Part(text=block.text), block.thought_signature))
+        elif isinstance(block, ThinkingBlock):
+            if foreign:
+                parts.append(
+                    genai_types.Part.from_text(text=thinking_as_text(message, block).text)
+                )
+            else:
+                parts.append(
+                    _signed(genai_types.Part(text=block.thinking, thought=True), block.signature)
+                )
+        elif isinstance(block, RedactedThinkingBlock):
+            continue
         elif isinstance(block, ToolUseBlock):
-            part_kwargs: dict[str, Any] = {
-                "function_call": genai_types.FunctionCall(
+            part = genai_types.Part(
+                function_call=genai_types.FunctionCall(
                     name=block.name,
                     args=block.input,
                     id=block.id,
                 )
-            }
-            signature = _decode_thought_signature(block.thought_signature)
-            if signature is not None:
-                part_kwargs["thought_signature"] = signature
-            parts.append(genai_types.Part(**part_kwargs))
-        else:
+            )
+            if foreign:
+                part.thought_signature = _SKIP_SIGNATURE
+                parts.append(part)
+            else:
+                parts.append(_signed(part, block.thought_signature))
+        elif isinstance(block, ToolResultBlock):
             name = names_by_id.get(block.tool_use_id)
             if name is None:
                 raise DwarError(
@@ -327,3 +373,11 @@ def _to_parts(
                 )
             )
     return parts
+
+
+def _signed(part: genai_types.Part, signature: str | None) -> genai_types.Part:
+    """_signed attaches a round-tripped thought signature to a part when there is one."""
+    decoded = _decode_thought_signature(signature)
+    if decoded is not None:
+        part.thought_signature = decoded
+    return part

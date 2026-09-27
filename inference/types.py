@@ -12,9 +12,28 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+Provider = Literal["anthropic", "gemini"]
+Lane = Literal["reasoning", "conversation"]
+ToolChoice = Literal["auto", "any"]
+
+
 class TextBlock(_Model):
     type: Literal["text"]
     text: str
+    # Opaque provider state (Gemini signs a trailing text part). Round-trip unchanged.
+    thought_signature: str | None = None
+
+
+class ThinkingBlock(_Model):
+    type: Literal["thinking"]
+    thinking: str
+    # Anthropic's thinking signature, or Gemini's signature on a thought part.
+    signature: str | None = None
+
+
+class RedactedThinkingBlock(_Model):
+    type: Literal["redacted_thinking"]
+    data: str
 
 
 class ToolUseBlock(_Model):
@@ -34,19 +53,26 @@ class ToolResultBlock(_Model):
 
 
 ContentBlock = Annotated[
-    Union[TextBlock, ToolUseBlock, ToolResultBlock],
+    Union[TextBlock, ThinkingBlock, RedactedThinkingBlock, ToolUseBlock, ToolResultBlock],
     Field(discriminator="type"),
 ]
 
 ResponseBlock = Annotated[
-    Union[TextBlock, ToolUseBlock],
+    Union[TextBlock, ThinkingBlock, RedactedThinkingBlock, ToolUseBlock],
     Field(discriminator="type"),
 ]
+
+_ASSISTANT_ONLY = {"thinking", "redacted_thinking", "tool_use"}
 
 
 class Message(_Model):
     role: Role
     content: str | list[ContentBlock]
+    # Who produced an assistant turn. Adapters replay their own provider's turns
+    # verbatim (thinking, signatures) and translate the other provider's turns.
+    # None is plain text with no provider state (a transcript line).
+    provider: Provider | None = None
+    lane: Lane | None = None
 
 
 class Tool(_Model):
@@ -66,15 +92,24 @@ class ChatRequest(_Model):
     system: str
     messages: list[Message]
     tools: list[Tool] = Field(default_factory=list)
+    # auto lets the model think and write before (or instead of) a tool call;
+    # any forces a tool call on every turn and leaves no room to think.
+    tool_choice: ToolChoice
 
     @model_validator(mode="after")
     def check_block_roles(self) -> "ChatRequest":
         for message in self.messages:
+            if message.role != "assistant" and (
+                message.provider is not None or message.lane is not None
+            ):
+                raise ValueError("provider and lane appear only on assistant messages")
+            if (message.provider is None) != (message.lane is None):
+                raise ValueError("provider and lane are set together")
             if isinstance(message.content, str):
                 continue
             for block in message.content:
-                if block.type == "tool_use" and message.role != "assistant":
-                    raise ValueError("tool_use blocks appear only in assistant messages")
+                if block.type in _ASSISTANT_ONLY and message.role != "assistant":
+                    raise ValueError(f"{block.type} blocks appear only in assistant messages")
                 if block.type == "tool_result" and message.role != "user":
                     raise ValueError("tool_result blocks appear only in user messages")
         return self
@@ -84,6 +119,7 @@ class ChatResponse(_Model):
     content: list[ResponseBlock]
     stop_reason: StopReason
     usage: Usage
+    provider: Provider
 
 
 class EmbedResult(_Model):
