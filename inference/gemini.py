@@ -94,10 +94,7 @@ class GeminiAdapter:
         config_kwargs: dict[str, Any] = {
             "system_instruction": genai_types.Content(parts=parts),
             "max_output_tokens": self._max_tokens,
-            "thinking_config": genai_types.ThinkingConfig(
-                thinking_level=genai_types.ThinkingLevel.MINIMAL,
-                include_thoughts=True,
-            ),
+            "thinking_config": genai_types.ThinkingConfig(include_thoughts=True),
             "automatic_function_calling": genai_types.AutomaticFunctionCallingConfig(
                 disable=True
             ),
@@ -170,10 +167,7 @@ class GeminiAdapter:
             ],
             genai_types.GenerateContentConfig(
                 max_output_tokens=self._max_tokens,
-                thinking_config=genai_types.ThinkingConfig(
-                    thinking_level=genai_types.ThinkingLevel.MINIMAL,
-                    include_thoughts=False,
-                ),
+                thinking_config=genai_types.ThinkingConfig(include_thoughts=False),
             ),
         )
         texts: list[str] = []
