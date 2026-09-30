@@ -42,6 +42,8 @@ _FUNCTION_CALLING_MODES = {
 
 
 class GeminiAdapter:
+    """Chat, image description and image generation on the Gemini API, mapping provider failures to Dwar errors."""
+
     def __init__(
         self,
         *,

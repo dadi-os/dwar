@@ -20,15 +20,15 @@ ToolChoice = Literal["auto", "any"]
 class TextBlock(_Model):
     type: Literal["text"]
     text: str
-    # Opaque provider state (Gemini signs a trailing text part). Round-trip unchanged.
     thought_signature: str | None = None
+    """Opaque provider state (Gemini signs a trailing text part). Round-trip unchanged."""
 
 
 class ThinkingBlock(_Model):
     type: Literal["thinking"]
     thinking: str
-    # Anthropic's thinking signature, or Gemini's signature on a thought part.
     signature: str | None = None
+    """Anthropic's thinking signature, or Gemini's signature on a thought part."""
 
 
 class RedactedThinkingBlock(_Model):
@@ -41,8 +41,8 @@ class ToolUseBlock(_Model):
     id: str
     name: str
     input: dict[str, Any]
-    # Opaque provider state (Gemini thought signatures). Round-trip unchanged.
     thought_signature: str | None = None
+    """Opaque provider state (Gemini thought signatures). Round-trip unchanged."""
 
 
 class ToolResultBlock(_Model):
@@ -68,10 +68,11 @@ _ASSISTANT_ONLY = {"thinking", "redacted_thinking", "tool_use"}
 class Message(_Model):
     role: Role
     content: str | list[ContentBlock]
-    # Who produced an assistant turn. Adapters replay their own provider's turns
-    # verbatim (thinking, signatures) and translate the other provider's turns.
-    # None is plain text with no provider state (a transcript line).
     provider: Provider | None = None
+    """Who produced an assistant turn. Adapters replay their own provider's turns
+    verbatim (thinking, signatures) and translate the other provider's turns. None is
+    plain text with no provider state (a transcript line).
+    """
     lane: Lane | None = None
 
 
@@ -92,9 +93,10 @@ class ChatRequest(_Model):
     system: str
     messages: list[Message]
     tools: list[Tool] = Field(default_factory=list)
-    # auto lets the model think and write before (or instead of) a tool call;
-    # any forces a tool call on every turn and leaves no room to think.
     tool_choice: ToolChoice
+    """auto lets the model think and write before (or instead of) a tool call; any
+    forces a tool call on every turn and leaves no room to think.
+    """
 
     @model_validator(mode="after")
     def check_block_roles(self) -> "ChatRequest":

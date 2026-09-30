@@ -14,6 +14,8 @@ _TOML_PATH = _SERVICE_ROOT / "config.toml"
 
 
 class Env(BaseSettings):
+    """Provider API keys from the environment. A missing key fails the request that needs it (503 provider_unconfigured)."""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -27,6 +29,8 @@ class Env(BaseSettings):
 
 
 class ChatEndpoint(BaseModel):
+    """One chat endpoint in `config.toml`: provider, model, and output and thinking budgets."""
+
     provider: str
     model: str
     max_tokens: int
@@ -160,6 +164,8 @@ class SpeechTranscribe(BaseModel):
 
 
 class Retry(BaseModel):
+    """Bounded retries for transport failures: attempt count, backoff per attempt, per-call timeout."""
+
     attempts: int
     backoff_seconds: tuple[float, ...]
     timeout_seconds: float
@@ -212,6 +218,8 @@ class FileConfig(BaseModel):
 
 
 class Config(BaseModel):
+    """The loaded service config: environment keys plus `config.toml`."""
+
     env: Env
     chat: ChatFile
     embed: Embed

@@ -61,7 +61,7 @@ Logs follow the nas JSON contract (`time`, `level`, `service=dwar`, `msg`, plus 
 
 Every served inference call also emits one `inference` line: `caller`, `route` (`chat.reasoning`, `chat.conversation`, `chat.complete`, `embed`, `image.describe`, `image.create`, `speech.transcribe`), `provider`, `model`, `duration_ms`, `request_id`, and the call's cost fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `stop_reason`; `audio_seconds` for speech). Prompt and response content are never logged. Dwar stays stateless — cost reporting is a LogQL query over these lines in Loki.
 
-Every route except `/health` requires `X-Dadi-Caller` naming the service and actor that pays for the call (`dimaag/<agent id>`, `dimaag/router`, `yaad/ingest`, …); missing or blank is `invalid_request` (422).
+Every route except `/health` requires `X-Dadi-Caller` naming the service and actor that pays for the call (`hath/<agent id>`, `hath/router`, `yaad/ingest`, …); missing or blank is `invalid_request` (422).
 
 HTTP errors: `{ "error": { "type": "<code>", "message": "..." } }`.
 

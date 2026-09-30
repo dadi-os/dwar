@@ -10,6 +10,8 @@ from inference.types import EmbedResult
 
 
 class OpenAIAdapter:
+    """Embeddings on the OpenAI API, mapping provider failures to Dwar errors."""
+
     def __init__(
         self,
         *,

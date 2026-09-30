@@ -35,6 +35,8 @@ _STOP_REASONS: dict[str, StopReason] = {
 
 
 class AnthropicAdapter:
+    """Chat completions on the Anthropic Messages API, mapping provider failures to Dwar errors."""
+
     def __init__(
         self,
         *,

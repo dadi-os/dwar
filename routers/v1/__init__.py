@@ -11,7 +11,7 @@ from routers.v1.speech import router as speech_router
 
 
 async def require_caller(x_dadi_caller: Annotated[str, Header()]) -> None:
-    """require_caller demands X-Dadi-Caller (e.g. `dimaag/browser-manager`) so
+    """require_caller demands X-Dadi-Caller (e.g. `hath/browser-manager`) so
     every inference log line is attributable to the service and agent that paid for it."""
     if not x_dadi_caller.strip():
         raise DwarError(422, "invalid_request", "X-Dadi-Caller must not be empty")

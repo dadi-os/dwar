@@ -139,6 +139,7 @@ def _with_retry(call):
 
 
 def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
+    """Run one chat turn on the lane's configured model, with that lane's Dwar block ahead of the caller's system prompt."""
     cfg = get_config()
     if lane == "reasoning":
         endpoint = cfg.chat.reasoning
@@ -173,6 +174,7 @@ def _logged_chat(
 
 
 def embed(texts: list[str]) -> EmbedResult:
+    """Embed a batch of texts with the configured embedding model."""
     endpoint = get_config().embed
     started = time.perf_counter()
     result = _with_retry(lambda: _embed_adapter().embed(texts))
@@ -183,6 +185,7 @@ def embed(texts: list[str]) -> EmbedResult:
 def describe_image(
     image: bytes, media_type: str, prompt: str | None
 ) -> DescribeResult:
+    """Describe an image, using `prompt` or the default describe instruction."""
     instruction = prompt if prompt is not None else describe_instruction()
     endpoint = get_config().image.describe
     started = time.perf_counter()
@@ -194,6 +197,7 @@ def describe_image(
 
 
 def create_image(prompt: str) -> CreateResult:
+    """Generate one image from a text prompt."""
     endpoint = get_config().image.create
     started = time.perf_counter()
     result = _with_retry(lambda: _create_adapter().create_image(prompt))
@@ -202,6 +206,7 @@ def create_image(prompt: str) -> CreateResult:
 
 
 def transcribe(audio: bytes, media_type: str) -> TranscribeResult:
+    """Transcribe an audio clip to text."""
     endpoint = get_config().speech.transcribe
     started = time.perf_counter()
     result = _with_retry(lambda: _transcribe_adapter().transcribe(audio, media_type))

@@ -272,7 +272,7 @@ def test_inference_log_line_attributes_cost(
             "tool_choice": "auto",
             "messages": [{"role": "user", "content": "hi"}],
         },
-        headers={"X-Dadi-Caller": "dimaag/browser-manager", "X-Request-Id": "req-42"},
+        headers={"X-Dadi-Caller": "hath/browser-manager", "X-Request-Id": "req-42"},
     )
 
     assert response.status_code == 200
@@ -280,7 +280,7 @@ def test_inference_log_line_attributes_cost(
     lines = [r for r in caplog.records if r.getMessage() == "inference"]
     assert len(lines) == 1
     line = lines[0]
-    assert line.caller == "dimaag/browser-manager"
+    assert line.caller == "hath/browser-manager"
     assert line.request_id == "req-42"
     assert line.route == "chat.complete"
     assert (line.input_tokens, line.output_tokens) == (11, 7)

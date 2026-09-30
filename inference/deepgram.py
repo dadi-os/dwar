@@ -11,6 +11,8 @@ from inference.types import TranscribeResult
 
 
 class DeepgramAdapter:
+    """Speech transcription on the Deepgram API, mapping provider failures to Dwar errors."""
+
     def __init__(
         self,
         *,
