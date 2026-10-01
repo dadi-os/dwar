@@ -5,8 +5,9 @@ from __future__ import annotations
 import tomllib
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _SERVICE_ROOT = Path(__file__).resolve().parent
@@ -29,12 +30,13 @@ class Env(BaseSettings):
 
 
 class ChatEndpoint(BaseModel):
-    """One chat endpoint in `config.toml`: provider, model, and output and thinking budgets."""
+    """One chat endpoint in `config.toml`: provider, model, output budget, and Anthropic thinking effort."""
 
     provider: str
     model: str
     max_tokens: int
-    thinking_budget: int | None = None
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
+    """Anthropic `output_config.effort`; required for anthropic endpoints and rejected for the rest."""
 
     @field_validator("provider", "model")
     @classmethod
@@ -50,12 +52,13 @@ class ChatEndpoint(BaseModel):
             raise ValueError("must be >= 1")
         return value
 
-    @field_validator("thinking_budget")
-    @classmethod
-    def positive_budget(cls, value: int | None) -> int | None:
-        if value is not None and value < 1:
-            raise ValueError("must be >= 1")
-        return value
+    @model_validator(mode="after")
+    def effort_matches_provider(self) -> ChatEndpoint:
+        if self.provider == "anthropic" and self.effort is None:
+            raise ValueError("anthropic chat endpoints require effort")
+        if self.provider != "anthropic" and self.effort is not None:
+            raise ValueError(f"effort applies only to anthropic, not {self.provider}")
+        return self
 
 
 class Embed(BaseModel):

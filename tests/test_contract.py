@@ -319,7 +319,7 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
             ),
         )
 
-    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, timeout_seconds=1)
+    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, effort="medium", timeout_seconds=1)
     adapter._client = SimpleNamespace(messages=SimpleNamespace(create=create))
     request = ChatRequest.model_validate(
         {

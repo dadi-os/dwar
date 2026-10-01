@@ -43,10 +43,12 @@ class AnthropicAdapter:
         api_key: str,
         model: str,
         max_tokens: int,
+        effort: str,
         timeout_seconds: float,
     ) -> None:
         self._model = model
         self._max_tokens = max_tokens
+        self._effort = effort
         self._client = anthropic.Anthropic(
             api_key=api_key,
             max_retries=0,
@@ -67,6 +69,7 @@ class AnthropicAdapter:
             "model": self._model,
             "max_tokens": self._max_tokens,
             "thinking": {"type": "adaptive", "display": "summarized"},
+            "output_config": {"effort": self._effort},
             "system": system,
             "messages": _with_history_breakpoint(
                 [_to_message(message) for message in _shape_history(request.messages)]

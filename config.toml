@@ -2,7 +2,7 @@
 provider = "anthropic"
 model = "claude-sonnet-5"
 max_tokens = 16384
-thinking_budget = 4096
+effort = "medium"
 
 [chat.conversation]
 provider = "gemini"

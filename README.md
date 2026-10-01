@@ -27,7 +27,7 @@ dwar/
 
 ## Config vs env
 
-`config.toml` (checked in) holds model IDs, token limits, thinking budget, size caps, retry, and timeout.
+`config.toml` (checked in) holds model IDs, token limits, the reasoning lane's Anthropic effort level, size caps, retry, and timeout.
 
 `.env` holds provider keys only: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`. Host/port come from Nas.
 

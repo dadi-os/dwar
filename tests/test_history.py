@@ -21,7 +21,7 @@ def _anthropic(sent: dict[str, object], content: list[SimpleNamespace]):
         sent.update(kwargs)
         return SimpleNamespace(content=content, stop_reason="tool_use", usage=_USAGE)
 
-    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, timeout_seconds=1)
+    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, effort="medium", timeout_seconds=1)
     adapter._client = SimpleNamespace(messages=SimpleNamespace(create=create))
     return adapter
 
@@ -53,6 +53,7 @@ def test_anthropic_returns_thinking_text_and_tool_in_one_turn() -> None:
 
     assert sent["tool_choice"] == {"type": "auto"}
     assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
+    assert sent["output_config"] == {"effort": "medium"}
     assert response.provider == "anthropic"
     assert [block.type for block in response.content] == ["thinking", "text", "tool_use"]
     assert response.content[0].signature == "sig-1"
@@ -213,3 +214,21 @@ def test_tool_choice_is_required() -> None:
 
     with pytest.raises(ValidationError):
         ChatRequest.model_validate({"system": "s", "messages": [{"role": "user", "content": "hi"}]})
+
+
+def test_anthropic_chat_endpoint_requires_effort_and_other_providers_reject_it() -> None:
+    from pydantic import ValidationError
+
+    from config import ChatEndpoint
+
+    assert ChatEndpoint(provider="anthropic", model="m", max_tokens=10, effort="medium").effort == "medium"
+    for fields in (
+        {"provider": "anthropic"},
+        {"provider": "gemini", "effort": "medium"},
+        {"provider": "anthropic", "effort": "huge"},
+    ):
+        try:
+            ChatEndpoint(model="m", max_tokens=10, **fields)
+        except ValidationError:
+            continue
+        raise AssertionError(f"accepted {fields}")

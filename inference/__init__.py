@@ -62,6 +62,7 @@ def _chat_adapter(endpoint: ChatEndpoint) -> AnthropicAdapter | GeminiAdapter:
             api_key=_require_key(cfg.env.anthropic_api_key, "ANTHROPIC_API_KEY"),
             model=endpoint.model,
             max_tokens=endpoint.max_tokens,
+            effort=endpoint.effort,
             timeout_seconds=timeout,
         )
     if endpoint.provider == "gemini":
