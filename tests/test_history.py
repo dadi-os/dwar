@@ -217,6 +217,7 @@ def test_tool_choice_is_required() -> None:
 
 
 def test_anthropic_chat_endpoint_requires_effort_and_other_providers_reject_it() -> None:
+    import pytest
     from pydantic import ValidationError
 
     from config import ChatEndpoint
@@ -227,8 +228,5 @@ def test_anthropic_chat_endpoint_requires_effort_and_other_providers_reject_it()
         {"provider": "gemini", "effort": "medium"},
         {"provider": "anthropic", "effort": "huge"},
     ):
-        try:
+        with pytest.raises(ValidationError):
             ChatEndpoint(model="m", max_tokens=10, **fields)
-        except ValidationError:
-            continue
-        raise AssertionError(f"accepted {fields}")
