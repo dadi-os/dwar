@@ -67,7 +67,8 @@ class JsonFormatter(logging.Formatter):
 
 
 def configure_logging() -> None:
-    """Install JSON logging on the root logger; silence uvicorn access spam."""
+    """Install JSON logging on the root logger; silence uvicorn access spam and the
+    provider SDKs' per-call info lines, which repeat what the inference log line records."""
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonFormatter())
     root = logging.getLogger()
@@ -84,6 +85,9 @@ def configure_logging() -> None:
     access.handlers.clear()
     access.propagate = False
     access.disabled = True
+
+    for name in ("httpx", "google_genai"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def log_extra(**fields: Any) -> dict[str, Any]:
