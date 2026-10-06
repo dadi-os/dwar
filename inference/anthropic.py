@@ -24,6 +24,12 @@ from inference.types import (
     Usage,
 )
 
+_LONG_LIVED = {"type": "ephemeral", "ttl": "1h"}
+"""Cache entry for prefixes reused across loops: the system lane block and a cache_breakpoint turn."""
+
+_SHORT_LIVED = {"type": "ephemeral"}
+"""Five-minute cache entry on the newest message, read by the loop's next step."""
+
 _STOP_REASONS: dict[str, StopReason] = {
     "end_turn": "end_turn",
     "tool_use": "tool_use",
@@ -62,7 +68,7 @@ class AnthropicAdapter:
                 {
                     "type": "text",
                     "text": lane_block,
-                    "cache_control": {"type": "ephemeral"},
+                    "cache_control": _LONG_LIVED,
                 }
             )
         kwargs: dict[str, Any] = {
@@ -71,9 +77,7 @@ class AnthropicAdapter:
             "thinking": {"type": "adaptive", "display": "summarized"},
             "output_config": {"effort": self._effort},
             "system": system,
-            "messages": _with_history_breakpoint(
-                [_to_message(message) for message in _shape_history(request.messages)]
-            ),
+            "messages": _with_breakpoints(_shape_history(request.messages)),
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
@@ -135,22 +139,35 @@ class AnthropicAdapter:
         )
 
 
-def _with_history_breakpoint(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Mark the last message block as a cache breakpoint.
+def _with_breakpoints(messages: list[Message]) -> list[dict[str, Any]]:
+    """Render the history with its cache breakpoints.
 
-    Agent loops resend the whole history every step; the breakpoint lets the next
-    step read everything up to here from cache instead of paying full input price.
+    Agent loops resend the whole history every step. The last message keeps a
+    five-minute entry the loop's next step reads. A cache_breakpoint turn keeps a
+    one-hour entry: it ends the prefix the caller's next loop starts from too (an
+    agent's next wake opens on the same transcript), so the steps in between keep
+    it warm and the next loop reads it instead of rewriting it. Anthropic wants
+    longer-lived entries ahead of shorter ones, which is why the system lane block
+    is one-hour as well.
     """
-    if not messages:
-        return messages
-    last = messages[-1]
-    content = last["content"]
+    rendered = [_to_message(message) for message in messages]
+    for index, message in enumerate(messages):
+        if message.cache_breakpoint:
+            rendered[index] = _cached(rendered[index], _LONG_LIVED)
+    if messages and not messages[-1].cache_breakpoint:
+        rendered[-1] = _cached(rendered[-1], _SHORT_LIVED)
+    return rendered
+
+
+def _cached(message: dict[str, Any], cache_control: dict[str, str]) -> dict[str, Any]:
+    """_cached returns `message` with `cache_control` on its last block."""
+    content = message["content"]
     if isinstance(content, str):
         blocks: list[dict[str, Any]] = [{"type": "text", "text": content}]
     else:
         blocks = [dict(block) for block in content]
-    blocks[-1]["cache_control"] = {"type": "ephemeral"}
-    return [*messages[:-1], {"role": last["role"], "content": blocks}]
+    blocks[-1]["cache_control"] = cache_control
+    return {"role": message["role"], "content": blocks}
 
 
 def _shape_history(messages: list[Message]) -> list[Message]:

@@ -116,7 +116,7 @@ Chat endpoints share this body:
 
 `tools` may be omitted or empty. `tool_choice` is required: `auto` lets the model think and write before, alongside, or instead of a tool call; `any` forces a tool call every turn, which leaves no room to think (use it for one-shot structured extraction, not agent loops).
 
-Message `content` is a string or a list of `text` / `thinking` / `redacted_thinking` / `tool_use` / `tool_result` blocks. `thinking`, `redacted_thinking` and `tool_use` only on `assistant`; `tool_result` only on `user`. An assistant message may carry `provider` (`anthropic` | `gemini`) and `lane` (`reasoning` | `conversation`) naming who produced it; send back exactly what a response returned, with its `provider`.
+Message `content` is a string or a list of `text` / `thinking` / `redacted_thinking` / `tool_use` / `tool_result` blocks. `thinking`, `redacted_thinking` and `tool_use` only on `assistant`; `tool_result` only on `user`. An assistant message may carry `provider` (`anthropic` | `gemini`) and `lane` (`reasoning` | `conversation`) naming who produced it; send back exactly what a response returned, with its `provider`. At most one message may set `cache_breakpoint: true` to end a prefix the caller resends unchanged across loops (Hath marks the transcript a wake starts from); a merged turn carries the mark.
 
 Each adapter replays its own provider's turns verbatim — thinking and signatures included, as Anthropic requires inside a tool loop — and translates the other provider's turns: Anthropic sees them as labelled text (`[conversation lane thinking]`, `[conversation lane called steer_reasoning] {…}`, and the matching results), Gemini sees the other provider's thinking as labelled text and its tool calls as function calls carrying Google's `skip_thought_signature_validator` placeholder signature. Consecutive same-role turns are merged (tool results first); an assistant turn that opens with thinking stays whole behind a `[continue]` user turn.
 
@@ -140,7 +140,7 @@ Response:
 }
 ```
 
-`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic adaptive thinking requested with `display: "summarized"`, since current Claude models return empty thinking text by default; or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the lane block and the last message block are prompt-cache breakpoints, so an agent loop resending its history pays cache-read price for everything up to the previous step; `input_tokens` counts only the uncached remainder.
+`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic adaptive thinking requested with `display: "summarized"`, since current Claude models return empty thinking text by default; or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the last message block is a five-minute prompt-cache breakpoint, so an agent loop resending its history pays cache-read price for everything up to the previous step; the lane block and the `cache_breakpoint` turn are one-hour breakpoints, so the agent's next loop reads the system and its shared transcript instead of rewriting them. `input_tokens` counts only the uncached remainder.
 
 ### Embed
 

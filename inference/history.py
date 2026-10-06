@@ -50,11 +50,21 @@ def foreign_turns_as_text(messages: list[Message], provider: Provider) -> list[M
         if is_foreign(message, provider):
             text = _assistant_as_text(message, foreign_calls)
             if text:
-                out.append(Message(role="assistant", content=text))
+                out.append(
+                    Message(
+                        role="assistant",
+                        content=text,
+                        cache_breakpoint=message.cache_breakpoint,
+                    )
+                )
             continue
         if message.role == "user" and not isinstance(message.content, str):
             out.append(
-                Message(role="user", content=_results_as_text(message.content, foreign_calls))
+                Message(
+                    role="user",
+                    content=_results_as_text(message.content, foreign_calls),
+                    cache_breakpoint=message.cache_breakpoint,
+                )
             )
             continue
         out.append(message)
@@ -103,7 +113,8 @@ def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list
     never merged; a CONTINUE user turn separates them so each keeps its own
     provider state. With split_before_thinking, an assistant turn that opens
     with thinking is also kept whole behind a CONTINUE turn (Anthropic wants
-    thinking to lead the turn it belongs to).
+    thinking to lead the turn it belongs to). A merged turn keeps the
+    cache_breakpoint mark of any turn folded into it.
     """
     out: list[Message] = []
     for message in messages:
@@ -130,12 +141,17 @@ def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list
                 content=_blocks(prev) + _blocks(message),
                 provider=prev.provider,
                 lane=prev.lane,
+                cache_breakpoint=prev.cache_breakpoint or message.cache_breakpoint,
             )
             continue
         blocks = _blocks(prev) + _blocks(message)
         results = [b for b in blocks if isinstance(b, ToolResultBlock)]
         rest = [b for b in blocks if not isinstance(b, ToolResultBlock)]
-        out[-1] = Message(role="user", content=[*results, *rest])
+        out[-1] = Message(
+            role="user",
+            content=[*results, *rest],
+            cache_breakpoint=prev.cache_breakpoint or message.cache_breakpoint,
+        )
     return out
 
 

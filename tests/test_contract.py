@@ -347,3 +347,75 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
     assert messages[0]["content"] == "[From: Ankur]\\nfind Oliver"
     assert response.usage.cache_read_input_tokens == 5000
     assert response.usage.cache_creation_input_tokens == 0
+
+
+def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> None:
+    from types import SimpleNamespace
+
+    from inference.anthropic import AnthropicAdapter
+    from inference.types import ChatRequest
+
+    sent: dict[str, object] = {}
+
+    def create(**kwargs: object) -> SimpleNamespace:
+        sent.update(kwargs)
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="tool_use", id="t1", name="yield", input={})],
+            stop_reason="tool_use",
+            usage=SimpleNamespace(
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=0,
+            ),
+        )
+
+    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, effort="medium", timeout_seconds=1)
+    adapter._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    request = ChatRequest.model_validate(
+        {
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [
+                {"role": "user", "content": "[From: Ankur]\\nfind Oliver", "cache_breakpoint": True},
+                {"role": "user", "content": "[Arrived during this wake]\\nalso Maya"},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "tool_use", "id": "t0", "name": "wait", "input": {}}],
+                    "provider": "anthropic",
+                    "lane": "reasoning",
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "t0", "content": "done"}],
+                },
+            ],
+        }
+    )
+
+    adapter.complete(request, "lane doctrine")
+
+    hour = {"type": "ephemeral", "ttl": "1h"}
+    assert sent["system"][-1]["cache_control"] == hour
+    messages = sent["messages"]
+    assert "cache_control" not in messages[0]["content"][0]
+    assert messages[0]["content"][1]["cache_control"] == hour
+    assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_chat_rejects_more_than_one_cache_breakpoint(client: TestClient) -> None:
+    response = client.post(
+        "/chat/reasoning",
+        json={
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [
+                {"role": "user", "content": "a", "cache_breakpoint": True},
+                {"role": "assistant", "content": "b", "cache_breakpoint": True},
+                {"role": "user", "content": "c"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["type"] == "invalid_request"

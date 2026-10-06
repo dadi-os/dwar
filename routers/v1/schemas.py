@@ -78,6 +78,11 @@ class Message(_Contract):
     plain text with no provider state (a transcript line).
     """
     lane: Lane | None = None
+    cache_breakpoint: bool = False
+    """Ends a prefix the caller resends unchanged across requests beyond the one in
+    flight (Hath: the transcript a wake starts from). Providers that cache by prefix
+    keep a long-lived entry here. At most one message per request.
+    """
 
 
 class Tool(_Contract):
@@ -104,6 +109,8 @@ class ChatRequest(_Contract):
 
     @model_validator(mode="after")
     def check_block_roles(self) -> "ChatRequest":
+        if sum(message.cache_breakpoint for message in self.messages) > 1:
+            raise ValueError("at most one message sets cache_breakpoint")
         for message in self.messages:
             if message.role != "assistant" and (
                 message.provider is not None or message.lane is not None

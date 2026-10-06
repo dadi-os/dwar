@@ -74,6 +74,11 @@ class Message(_Model):
     plain text with no provider state (a transcript line).
     """
     lane: Lane | None = None
+    cache_breakpoint: bool = False
+    """Ends a prefix the caller resends unchanged across requests beyond the one in
+    flight. Adapters that cache by prefix keep a long-lived entry here; merging or
+    translating the turn carries the mark onto the turn it lands in.
+    """
 
 
 class Tool(_Model):
@@ -100,6 +105,8 @@ class ChatRequest(_Model):
 
     @model_validator(mode="after")
     def check_block_roles(self) -> "ChatRequest":
+        if sum(message.cache_breakpoint for message in self.messages) > 1:
+            raise ValueError("at most one message sets cache_breakpoint")
         for message in self.messages:
             if message.role != "assistant" and (
                 message.provider is not None or message.lane is not None
