@@ -6,8 +6,8 @@ effort = "low"
 
 [chat.conversation]
 provider = "gemini"
-model = "gemini-3.6-flash"
-max_tokens = 4096
+model = "gemini-3.1-pro-preview"
+max_tokens = 8192
 
 [chat.complete]
 provider = "gemini"
