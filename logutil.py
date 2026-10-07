@@ -2,7 +2,8 @@
 
 Fields: time (RFC3339), level, service, msg; optional code, request_id,
 method, path, status, duration_ms, and the per-call inference fields (caller,
-route, provider, model, token counts, stop_reason, audio_seconds).
+route, provider, model, token counts, stop_reason, provider_stop_reason,
+audio_seconds).
 """
 
 from __future__ import annotations
@@ -56,6 +57,7 @@ class JsonFormatter(logging.Formatter):
             "cache_read_input_tokens",
             "cache_creation_input_tokens",
             "stop_reason",
+            "provider_stop_reason",
             "audio_seconds",
         ):
             value = getattr(record, key, None)

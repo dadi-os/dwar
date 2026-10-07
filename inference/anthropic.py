@@ -130,6 +130,7 @@ class AnthropicAdapter:
             provider="anthropic",
             content=content,
             stop_reason=stop,
+            provider_stop_reason=response.stop_reason,
             usage=Usage(
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,

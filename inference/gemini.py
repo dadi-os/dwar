@@ -152,10 +152,12 @@ class GeminiAdapter:
                     )
                 )
 
+        finish_reason = _finish_reason(response)
         return ChatResponse(
             provider="gemini",
             content=content,
-            stop_reason=_stop_reason(_finish_reason(response), content),
+            stop_reason=_stop_reason(finish_reason, content),
+            provider_stop_reason=finish_reason,
             usage=_usage(response),
         )
 
@@ -224,10 +226,15 @@ def _candidate_parts(response: Any) -> list[Any]:
     return list(candidate.content.parts)
 
 
-def _finish_reason(response: Any) -> Any:
+def _finish_reason(response: Any) -> str | None:
+    """The first candidate's finish reason as Gemini names it (e.g. MAX_TOKENS), or None when it sent none."""
     if not response.candidates:
         raise DwarError(502, "provider", "Gemini returned no candidates")
-    return response.candidates[0].finish_reason
+    finish_reason = response.candidates[0].finish_reason
+    if finish_reason is None:
+        return None
+    raw = getattr(finish_reason, "name", None) or str(finish_reason)
+    return raw.rsplit(".", 1)[-1].upper()
 
 
 def _usage(response: Any) -> Usage:
@@ -245,14 +252,12 @@ def _usage(response: Any) -> Usage:
     )
 
 
-def _stop_reason(finish_reason: Any, content: list[ResponseBlock]) -> StopReason:
+def _stop_reason(finish_reason: str | None, content: list[ResponseBlock]) -> StopReason:
     if any(isinstance(block, ToolUseBlock) for block in content):
         return "tool_use"
-    raw = getattr(finish_reason, "name", None) or str(finish_reason or "")
-    raw = raw.rsplit(".", 1)[-1].upper()
-    if raw == "STOP":
+    if finish_reason == "STOP":
         return "end_turn"
-    if raw == "MAX_TOKENS":
+    if finish_reason == "MAX_TOKENS":
         return "max_tokens"
     return "error"
 

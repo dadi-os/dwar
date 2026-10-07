@@ -130,6 +130,7 @@ def _fake_chat_adapter(seen: dict[str, object]):
                 provider="gemini",
                 content=[TextBlock(type="text", text="ok")],
                 stop_reason="end_turn",
+                provider_stop_reason="STOP",
                 usage=Usage(
                     input_tokens=11,
                     output_tokens=7,
@@ -296,6 +297,42 @@ def test_healthy_health_checks_are_not_logged(
     paths = [getattr(r, "path", None) for r in caplog.records if r.getMessage() == "request"]
     assert "/health" not in paths
     assert "/embed" in paths
+
+
+def test_gemini_empty_malformed_turn_maps_to_error_and_keeps_raw_reason() -> None:
+    from types import SimpleNamespace
+
+    from google.genai import types as genai_types
+
+    from inference.gemini import GeminiAdapter
+    from inference.types import ChatRequest
+
+    adapter = GeminiAdapter(api_key="k", model="m", max_tokens=10, timeout_ms=1000)
+    adapter._generate = lambda contents, config: SimpleNamespace(
+        candidates=[
+            SimpleNamespace(
+                content=None,
+                finish_reason=genai_types.FinishReason.MALFORMED_FUNCTION_CALL,
+            )
+        ],
+        usage_metadata=SimpleNamespace(
+            prompt_token_count=100,
+            candidates_token_count=0,
+            thoughts_token_count=8190,
+            cached_content_token_count=None,
+        ),
+    )
+    request = ChatRequest(
+        system="sys",
+        tool_choice="any",
+        messages=[{"role": "user", "content": "relay the report"}],
+    )
+
+    response = adapter.complete(request, None)
+
+    assert response.content == []
+    assert response.stop_reason == "error"
+    assert response.provider_stop_reason == "MALFORMED_FUNCTION_CALL"
 
 
 def test_anthropic_caches_history_and_reports_cache_usage() -> None:

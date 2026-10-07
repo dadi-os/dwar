@@ -169,6 +169,7 @@ def _logged_chat(
         endpoint.model,
         started,
         stop_reason=response.stop_reason,
+        provider_stop_reason=response.provider_stop_reason,
         **response.usage.model_dump(),
     )
     return response

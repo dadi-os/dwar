@@ -129,6 +129,9 @@ class ChatResponse(_Model):
     stop_reason: StopReason
     usage: Usage
     provider: Provider
+    provider_stop_reason: str | None
+    """The provider's own stop reason (e.g. Gemini's MALFORMED_FUNCTION_CALL) before it is
+    mapped to `stop_reason`; logged on the inference line, never part of the HTTP contract."""
 
 
 class EmbedResult(_Model):

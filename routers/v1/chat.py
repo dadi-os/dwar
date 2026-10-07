@@ -13,7 +13,7 @@ def _to_internal(request: ChatRequest) -> InternalChatRequest:
 
 
 def _to_http(response: InternalChatResponse) -> ChatResponse:
-    return ChatResponse.model_validate(response.model_dump())
+    return ChatResponse.model_validate(response.model_dump(exclude={"provider_stop_reason"}))
 
 
 @router.post("/reasoning", response_model=ChatResponse)
