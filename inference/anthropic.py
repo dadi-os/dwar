@@ -13,6 +13,7 @@ from inference.types import (
     ChatRequest,
     ChatResponse,
     ContentBlock,
+    Lane,
     Message,
     RedactedThinkingBlock,
     ResponseBlock,
@@ -61,7 +62,9 @@ class AnthropicAdapter:
             timeout=timeout_seconds,
         )
 
-    def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
+    def complete(
+        self, request: ChatRequest, lane: Lane | None, lane_block: str | None
+    ) -> ChatResponse:
         system: list[dict[str, Any]] = [{"type": "text", "text": request.system}]
         if lane_block is not None:
             system.append(
@@ -77,7 +80,7 @@ class AnthropicAdapter:
             "thinking": {"type": "adaptive", "display": "summarized"},
             "output_config": {"effort": self._effort},
             "system": system,
-            "messages": _with_breakpoints(_shape_history(request.messages)),
+            "messages": _with_breakpoints(_shape_history(request.messages, lane)),
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
@@ -171,12 +174,12 @@ def _cached(message: dict[str, Any], cache_control: dict[str, str]) -> dict[str,
     return {"role": message["role"], "content": blocks}
 
 
-def _shape_history(messages: list[Message]) -> list[Message]:
-    """Keep Anthropic's own turns verbatim (thinking must be replayed unchanged
-    inside a tool loop); Anthropic cannot validate another provider's tool calls
-    or thinking, so those turns become labelled text."""
+def _shape_history(messages: list[Message], lane: Lane | None) -> list[Message]:
+    """Keep this lane's own Anthropic turns verbatim (thinking must be replayed
+    unchanged inside a tool loop); another provider's or the other lane's tool
+    calls and thinking become labelled text."""
     return merge_turns(
-        foreign_turns_as_text(messages, "anthropic"), split_before_thinking=True
+        foreign_turns_as_text(messages, "anthropic", lane), split_before_thinking=True
     )
 
 

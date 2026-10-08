@@ -124,7 +124,9 @@ def _fake_chat_adapter(seen: dict[str, object]):
     from inference.types import ChatRequest, ChatResponse, TextBlock, Usage
 
     class _Adapter:
-        def complete(self, request: ChatRequest, lane_block: str | None) -> ChatResponse:
+        def complete(
+            self, request: ChatRequest, lane: str | None, lane_block: str | None
+        ) -> ChatResponse:
             seen["lane_block"] = lane_block
             return ChatResponse(
                 provider="gemini",
@@ -328,7 +330,7 @@ def test_gemini_empty_malformed_turn_maps_to_error_and_keeps_raw_reason() -> Non
         messages=[{"role": "user", "content": "relay the report"}],
     )
 
-    response = adapter.complete(request, None)
+    response = adapter.complete(request, None, None)
 
     assert response.content == []
     assert response.stop_reason == "error"
@@ -376,7 +378,7 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
         }
     )
 
-    response = adapter.complete(request, "lane doctrine")
+    response = adapter.complete(request, "reasoning", "lane doctrine")
 
     messages = sent["messages"]
     assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
@@ -430,7 +432,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
         }
     )
 
-    adapter.complete(request, "lane doctrine")
+    adapter.complete(request, "reasoning", "lane doctrine")
 
     hour = {"type": "ephemeral", "ttl": "1h"}
     assert sent["system"][-1]["cache_control"] == hour

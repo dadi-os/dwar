@@ -1,10 +1,11 @@
 """Provider-neutral history shaping shared by the chat adapters.
 
-A request's history can hold assistant turns from more than one provider: an
-agent's two lanes share one wake, and each lane runs on its own provider. A
-provider can only replay its own opaque state (thinking signatures, Gemini
-thought signatures), so each adapter keeps its own turns verbatim and uses this
-module to reshape the other provider's turns into something it accepts.
+A request's history holds assistant turns from both of an agent's lanes, which
+share one wake and may run on different providers. A lane's own turns (same
+provider, same lane) replay verbatim with their opaque state (thinking
+signatures, Gemini thought signatures). Every other turn is foreign: the other
+provider cannot replay its state, and the other lane's tool calls must not read
+as calls this lane made, so each adapter uses this module to reshape them.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import json
 
 from inference.types import (
     ContentBlock,
+    Lane,
     Message,
     Provider,
     TextBlock,
@@ -25,12 +27,14 @@ CONTINUE = "[continue]"
 """Neutral user turn that separates two assistant turns without adding meaning."""
 
 
-def is_foreign(message: Message, provider: Provider) -> bool:
-    """is_foreign reports whether an assistant turn came from another provider."""
+def is_foreign(message: Message, provider: Provider, lane: Lane | None) -> bool:
+    """is_foreign reports whether an assistant turn came from another provider or
+    another lane. lane is None outside the lanes (chat.complete), where every
+    lane's turn is foreign."""
     return (
         message.role == "assistant"
         and message.provider is not None
-        and message.provider != provider
+        and (message.provider != provider or message.lane != lane)
     )
 
 
@@ -39,15 +43,17 @@ def thinking_as_text(message: Message, block: ThinkingBlock) -> TextBlock:
     return TextBlock(type="text", text=f"[{message.lane} lane thinking]\n{block.thinking}")
 
 
-def foreign_turns_as_text(messages: list[Message], provider: Provider) -> list[Message]:
-    """foreign_turns_as_text rewrites other-provider assistant turns, and the
-    results of their tool calls, as labelled text. Used where the provider
-    rejects tool calls it did not make or thinking it did not sign. A foreign
-    turn with nothing readable (only redacted thinking) is dropped."""
+def foreign_turns_as_text(
+    messages: list[Message], provider: Provider, lane: Lane | None
+) -> list[Message]:
+    """foreign_turns_as_text rewrites foreign assistant turns, and the results of
+    their tool calls, as labelled text, so the model neither replays state it did
+    not sign nor reads the other lane's tool calls as its own. A foreign turn with
+    nothing readable (only redacted thinking) is dropped."""
     foreign_calls: dict[str, tuple[str, str]] = {}
     out: list[Message] = []
     for message in messages:
-        if is_foreign(message, provider):
+        if is_foreign(message, provider, lane):
             text = _assistant_as_text(message, foreign_calls)
             if text:
                 out.append(

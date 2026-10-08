@@ -49,7 +49,7 @@ def test_anthropic_returns_thinking_text_and_tool_in_one_turn() -> None:
         }
     )
 
-    response = adapter.complete(request, "lane")
+    response = adapter.complete(request, "reasoning", "lane")
 
     assert sent["tool_choice"] == {"type": "auto"}
     assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
@@ -93,7 +93,7 @@ def test_anthropic_replays_own_thinking_and_turns_gemini_turns_into_text() -> No
         }
     )
 
-    adapter.complete(request, "lane")
+    adapter.complete(request, "reasoning", "lane")
 
     messages = sent["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant", "user"]
@@ -103,6 +103,51 @@ def test_anthropic_replays_own_thinking_and_turns_gemini_turns_into_text() -> No
     assert "[conversation lane called steer_reasoning]" in foreign
     assert messages[2]["content"][0] == {"type": "text", "text": "[conversation lane steer_reasoning result]\nqueued"}
     assert messages[3]["content"][0] == {"type": "thinking", "thinking": "open gmail first", "signature": "sig-a"}
+    assert messages[4]["content"][0]["type"] == "tool_result"
+
+
+def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
+    sent: dict[str, object] = {}
+    adapter = _anthropic(sent, [SimpleNamespace(type="tool_use", id="c9", name="yield", input={})])
+    request = ChatRequest.model_validate(
+        {
+            "system": "sys",
+            "tool_choice": "auto",
+            "tools": _tools(),
+            "messages": [
+                {"role": "user", "content": "[From: Ankur]\nretire the worker"},
+                {
+                    "role": "assistant",
+                    "provider": "anthropic",
+                    "lane": "reasoning",
+                    "content": [
+                        {"type": "thinking", "thinking": "retire it", "signature": "sig-r"},
+                        {"type": "tool_use", "id": "r1", "name": "manage_agent", "input": {"retired": True}},
+                    ],
+                },
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "r1", "content": "ok"}]},
+                {
+                    "role": "assistant",
+                    "provider": "anthropic",
+                    "lane": "conversation",
+                    "content": [
+                        {"type": "thinking", "thinking": "report it", "signature": "sig-c"},
+                        {"type": "tool_use", "id": "c1", "name": "dispatch_message", "input": {}},
+                    ],
+                },
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "sent"}]},
+            ],
+        }
+    )
+
+    adapter.complete(request, "conversation", "lane")
+
+    messages = sent["messages"]
+    other = messages[1]["content"]
+    assert isinstance(other, str)
+    assert "[reasoning lane called manage_agent]" in other
+    assert messages[2]["content"][0] == {"type": "text", "text": "[reasoning lane manage_agent result]\nok"}
+    assert messages[3]["content"][0] == {"type": "thinking", "thinking": "report it", "signature": "sig-c"}
     assert messages[4]["content"][0]["type"] == "tool_result"
 
 
@@ -131,7 +176,7 @@ def test_anthropic_keeps_thinking_leading_its_turn_after_other_assistant_text() 
         }
     )
 
-    adapter.complete(request, "lane")
+    adapter.complete(request, "reasoning", "lane")
 
     messages = sent["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant", "user"]
@@ -175,7 +220,7 @@ def test_gemini_gives_claude_tool_calls_the_placeholder_signature() -> None:
         ),
     ]
 
-    contents = _to_contents(messages)
+    contents = _to_contents(messages, "conversation")
 
     claude = contents[1].parts
     assert claude[0].text == "[reasoning lane thinking]\nbrowser is down"

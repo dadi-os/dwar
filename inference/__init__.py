@@ -148,21 +148,25 @@ def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
     else:
         endpoint = cfg.chat.conversation
         lane_block = conversation_lane_block()
-    return _logged_chat(f"chat.{lane}", endpoint, request, lane_block)
+    return _logged_chat(f"chat.{lane}", endpoint, request, lane, lane_block)
 
 
 def complete_text(request: ChatRequest) -> ChatResponse:
     """Run chat with the caller's system prompt only — no Dwar lane block."""
-    return _logged_chat("chat.complete", get_config().chat.complete, request, None)
+    return _logged_chat("chat.complete", get_config().chat.complete, request, None, None)
 
 
 def _logged_chat(
-    route: str, endpoint: ChatEndpoint, request: ChatRequest, lane_block: str | None
+    route: str,
+    endpoint: ChatEndpoint,
+    request: ChatRequest,
+    lane: Lane | None,
+    lane_block: str | None,
 ) -> ChatResponse:
     """Run one chat call with retries on the endpoint's provider and log its usage."""
     adapter = _chat_adapter(endpoint)
     started = time.perf_counter()
-    response = _with_retry(lambda: adapter.complete(request, lane_block))
+    response = _with_retry(lambda: adapter.complete(request, lane, lane_block))
     _log_inference(
         route,
         endpoint.provider,
