@@ -12,7 +12,7 @@ max_tokens = 32768
 [chat.complete]
 provider = "gemini"
 model = "gemini-3.1-pro-preview"
-max_tokens = 4096
+max_tokens = 16384
 
 [embed]
 provider = "openai"
