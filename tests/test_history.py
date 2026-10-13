@@ -106,6 +106,43 @@ def test_anthropic_replays_own_thinking_and_turns_gemini_turns_into_text() -> No
     assert messages[4]["content"][0]["type"] == "tool_result"
 
 
+def test_the_conversation_lane_sees_reasonings_results_as_one_line_outcomes() -> None:
+    sent: dict[str, object] = {}
+    adapter = _anthropic(sent, [SimpleNamespace(type="tool_use", id="c9", name="yield", input={})])
+    page = "Due this week\n" + "row " * 200
+    request = ChatRequest.model_validate(
+        {
+            "system": "sys",
+            "tool_choice": "auto",
+            "tools": _tools(),
+            "messages": [
+                {"role": "user", "content": "[From: Ankur]\nwhat is due"},
+                {
+                    "role": "assistant",
+                    "provider": "anthropic",
+                    "lane": "reasoning",
+                    "content": [
+                        {"type": "thinking", "thinking": "plan " * 300, "signature": "sig-r"},
+                        {"type": "tool_use", "id": "r1", "name": "terminal_read", "input": {"path": "due.md"}},
+                    ],
+                },
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "r1", "content": page}]},
+            ],
+        }
+    )
+
+    adapter.complete(request, "conversation", "lane")
+
+    messages = sent["messages"]
+    other = messages[1]["content"]
+    assert f"… ({len('[reasoning lane thinking]') + 1 + len('plan ' * 300)} chars)" in other
+    assert '[reasoning lane called terminal_read] {"path": "due.md"}' in other
+    outcome = messages[2]["content"][0]["text"]
+    assert outcome.startswith("[reasoning lane terminal_read result]\nDue this week row row")
+    assert "\n" not in outcome.split("\n", 1)[1]
+    assert outcome.endswith(f"… ({len(' '.join(page.split()))} chars)")
+
+
 def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
     sent: dict[str, object] = {}
     adapter = _anthropic(sent, [SimpleNamespace(type="tool_use", id="c9", name="yield", input={})])

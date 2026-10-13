@@ -26,6 +26,14 @@ from inference.types import (
 CONTINUE = "[continue]"
 """Neutral user turn that separates two assistant turns without adding meaning."""
 
+OUTCOME_CHARS = 200
+"""How much of a reasoning tool result the conversation lane sees: one line,
+enough to know what the call found, not the raw page or file it returned."""
+
+THINKING_CHARS = 600
+"""How much of a reasoning thinking block the conversation lane sees: the gist
+of what reasoning is doing, not the whole working."""
+
 
 def is_foreign(message: Message, provider: Provider, lane: Lane | None) -> bool:
     """is_foreign reports whether an assistant turn came from another provider or
@@ -49,12 +57,15 @@ def foreign_turns_as_text(
     """foreign_turns_as_text rewrites foreign assistant turns, and the results of
     their tool calls, as labelled text, so the model neither replays state it did
     not sign nor reads the other lane's tool calls as its own. A foreign turn with
-    nothing readable (only redacted thinking) is dropped."""
+    nothing readable (only redacted thinking) is dropped. The conversation lane
+    sees reasoning's work slim: calls whole, results as one-line outcomes and
+    thinking clipped, since it reports progress and never redoes the work."""
+    slim = lane == "conversation"
     foreign_calls: dict[str, tuple[str, str]] = {}
     out: list[Message] = []
     for message in messages:
         if is_foreign(message, provider, lane):
-            text = _assistant_as_text(message, foreign_calls)
+            text = _assistant_as_text(message, foreign_calls, slim)
             if text:
                 out.append(
                     Message(
@@ -68,7 +79,7 @@ def foreign_turns_as_text(
             out.append(
                 Message(
                     role="user",
-                    content=_results_as_text(message.content, foreign_calls),
+                    content=_results_as_text(message.content, foreign_calls, slim),
                     cache_breakpoint=message.cache_breakpoint,
                 )
             )
@@ -77,16 +88,20 @@ def foreign_turns_as_text(
     return out
 
 
-def _assistant_as_text(message: Message, foreign_calls: dict[str, tuple[str, str]]) -> str:
+def _assistant_as_text(
+    message: Message, foreign_calls: dict[str, tuple[str, str]], slim: bool
+) -> str:
     """_assistant_as_text flattens one foreign assistant turn to labelled text and
-    records its tool call ids in foreign_calls so their results follow suit."""
+    records its tool call ids in foreign_calls so their results follow suit; slim
+    clips its thinking to THINKING_CHARS."""
     if isinstance(message.content, str):
         return message.content
     label = f"{message.lane} lane"
     lines: list[str] = []
     for block in message.content:
         if isinstance(block, ThinkingBlock):
-            lines.append(thinking_as_text(message, block).text)
+            text = thinking_as_text(message, block).text
+            lines.append(_clip(text, THINKING_CHARS) if slim else text)
         elif isinstance(block, TextBlock):
             lines.append(block.text)
         elif isinstance(block, ToolUseBlock):
@@ -96,19 +111,28 @@ def _assistant_as_text(message: Message, foreign_calls: dict[str, tuple[str, str
 
 
 def _results_as_text(
-    blocks: list[ContentBlock], foreign_calls: dict[str, tuple[str, str]]
+    blocks: list[ContentBlock], foreign_calls: dict[str, tuple[str, str]], slim: bool
 ) -> list[ContentBlock]:
     """_results_as_text turns results of foreign tool calls into labelled text,
-    leaving results of the provider's own calls untouched."""
+    leaving results of the provider's own calls untouched; slim makes each a
+    one-line outcome of OUTCOME_CHARS."""
     out: list[ContentBlock] = []
     for block in blocks:
         if isinstance(block, ToolResultBlock) and block.tool_use_id in foreign_calls:
             label, name = foreign_calls[block.tool_use_id]
             status = "error" if block.is_error else "result"
-            out.append(TextBlock(type="text", text=f"[{label} {name} {status}]\n{block.content}"))
+            content = _clip(" ".join(block.content.split()), OUTCOME_CHARS) if slim else block.content
+            out.append(TextBlock(type="text", text=f"[{label} {name} {status}]\n{content}"))
         else:
             out.append(block)
     return out
+
+
+def _clip(text: str, limit: int) -> str:
+    """_clip cuts text to limit characters and says how long it was."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}… ({len(text)} chars)"
 
 
 def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list[Message]:
