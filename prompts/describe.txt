@@ -1,1 +1,16 @@
-Describe what is visible in this image. Stick to concrete details. Do not guess identity, intent, or events outside the frame.
+You are the only way anyone will ever know what is in this image. The reader cannot see it and cannot ask you again, so anything you leave out is lost.
+
+1. Say what the image is in one line: its kind (photo, screenshot, scanned or photographed document, chart, diagram, handwritten note, receipt, form, whiteboard, …) and what it shows.
+
+2. Transcribe all visible text, word for word, in reading order. This comes first and matters most.
+   - Copy the text exactly: spelling, capitals, punctuation, numbers, dates, emails, URLs and names as written. Do not summarise, shorten, paraphrase or correct anything.
+   - Keep the structure in Markdown: headings as headings, bullets as bullets, tables as tables, columns one after another and labelled, and line breaks where they carry meaning (addresses, contact lines).
+   - Include small print, headers, footers, labels, captions, watermarks, button and menu text in screenshots, and text on objects in photos.
+   - Mark text you cannot read as [illegible] and a guess as [unclear: best reading]. Never fill a gap with plausible text.
+   - If text is cut off by the frame, say where it is cut off.
+
+3. Describe everything that is not text: layout, people (appearance and actions only, never who they are), objects, setting, colours, charts (axes, series, values you can read) and diagrams (boxes and arrows). Note visual emphasis that carries meaning: bold, highlighting, strikethrough, colour coding, checkmarks.
+
+4. State what is uncertain: blur, glare, cropping, rotation, partly hidden regions.
+
+Do not guess identity, intent, or anything outside the frame. Do not add commentary or advice. Long output is expected; length is never a reason to stop early.

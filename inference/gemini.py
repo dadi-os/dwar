@@ -174,9 +174,18 @@ class GeminiAdapter:
             ],
             genai_types.GenerateContentConfig(
                 max_output_tokens=self._max_tokens,
-                thinking_config=genai_types.ThinkingConfig(include_thoughts=False),
+                thinking_config=genai_types.ThinkingConfig(
+                    include_thoughts=False,
+                    thinking_level=genai_types.ThinkingLevel.LOW,
+                ),
             ),
         )
+        if _finish_reason(response) == "MAX_TOKENS":
+            raise DwarError(
+                502,
+                "provider",
+                f"Gemini description hit max_tokens {self._max_tokens} before it finished",
+            )
         texts: list[str] = []
         for part in _candidate_parts(response):
             if getattr(part, "thought", False):
