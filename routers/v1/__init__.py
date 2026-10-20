@@ -8,6 +8,7 @@ from routers.v1.chat import router as chat_router
 from routers.v1.embed import router as embed_router
 from routers.v1.image import router as image_router
 from routers.v1.speech import router as speech_router
+from routers.v1.web import router as web_router
 
 
 async def require_caller(x_dadi_caller: Annotated[str, Header()]) -> None:
@@ -23,3 +24,4 @@ router.include_router(chat_router, prefix="/chat")
 router.include_router(embed_router)
 router.include_router(image_router, prefix="/image")
 router.include_router(speech_router, prefix="/speech")
+router.include_router(web_router, prefix="/web")

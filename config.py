@@ -197,6 +197,32 @@ class Retry(BaseModel):
         return value
 
 
+class Web(BaseModel):
+    """Hath's web tools (inference/web.py): the small model that runs searches and answers
+    questions from fetched pages, and the bounds on what one call may fetch. Every field has
+    a default, so a box config without a [web] section still loads."""
+
+    model: str = "claude-haiku-5-5"
+    search_tool: str = "web_search_20250305"
+    search_max_tokens: int = 2048
+    answer_max_tokens: int = 1024
+    answer_page_chars: int = 60_000
+    max_page_chars: int = 200_000
+    max_page_bytes: int = 5_000_000
+    max_urls: int = 10
+    max_parallel: int = 5
+    max_redirects: int = 5
+    fetch_timeout_seconds: float = 20.0
+    user_agent: str = "Mozilla/5.0 (compatible; DadiFetch/1.0; +https://github.com/dadi-os)"
+
+    @field_validator("search_max_tokens", "answer_max_tokens", "answer_page_chars", "max_page_chars", "max_page_bytes", "max_urls", "max_parallel")
+    @classmethod
+    def positive(cls, value: int) -> int:
+        if value < 1:
+            raise ValueError("must be >= 1")
+        return value
+
+
 class ChatFile(BaseModel):
     reasoning: ChatEndpoint
     conversation: ChatEndpoint
@@ -218,6 +244,7 @@ class FileConfig(BaseModel):
     image: ImageFile
     speech: SpeechFile
     retry: Retry
+    web: Web = Web()
 
 
 class Config(BaseModel):
@@ -229,6 +256,7 @@ class Config(BaseModel):
     image: ImageFile
     speech: SpeechFile
     retry: Retry
+    web: Web
 
 
 def _load_toml() -> FileConfig:
@@ -249,4 +277,5 @@ def get_config() -> Config:
         image=file_cfg.image,
         speech=file_cfg.speech,
         retry=file_cfg.retry,
+        web=file_cfg.web,
     )
