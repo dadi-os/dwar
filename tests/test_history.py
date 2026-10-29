@@ -49,7 +49,7 @@ def test_anthropic_returns_thinking_text_and_tool_in_one_turn() -> None:
         }
     )
 
-    response = adapter.complete(request, "reasoning", "lane")
+    response = adapter.complete(request, "work", "lane")
 
     assert sent["tool_choice"] == {"type": "auto"}
     assert sent["thinking"] == {"type": "adaptive", "display": "summarized"}
@@ -72,17 +72,17 @@ def test_anthropic_replays_own_thinking_and_turns_gemini_turns_into_text() -> No
                 {
                     "role": "assistant",
                     "provider": "gemini",
-                    "lane": "conversation",
+                    "lane": "process",
                     "content": [
-                        {"type": "thinking", "thinking": "route to reasoning"},
-                        {"type": "tool_use", "id": "c1", "name": "steer_reasoning", "input": {"instruction": "open Gmail"}, "thought_signature": "c2ln"},
+                        {"type": "thinking", "thinking": "route to work"},
+                        {"type": "tool_use", "id": "c1", "name": "steer_work", "input": {"instruction": "open Gmail"}, "thought_signature": "c2ln"},
                     ],
                 },
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "queued"}]},
                 {
                     "role": "assistant",
                     "provider": "anthropic",
-                    "lane": "reasoning",
+                    "lane": "work",
                     "content": [
                         {"type": "thinking", "thinking": "open gmail first", "signature": "sig-a"},
                         {"type": "tool_use", "id": "r1", "name": "browser_screenshot", "input": {}},
@@ -93,20 +93,20 @@ def test_anthropic_replays_own_thinking_and_turns_gemini_turns_into_text() -> No
         }
     )
 
-    adapter.complete(request, "reasoning", "lane")
+    adapter.complete(request, "work", "lane")
 
     messages = sent["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant", "user"]
     foreign = messages[1]["content"]
     assert isinstance(foreign, str)
-    assert "[conversation lane thinking]\nroute to reasoning" in foreign
-    assert "[conversation lane called steer_reasoning]" in foreign
-    assert messages[2]["content"][0] == {"type": "text", "text": "[conversation lane steer_reasoning result]\nqueued"}
+    assert "[process lane thinking]\nroute to work" in foreign
+    assert "[process lane called steer_work]" in foreign
+    assert messages[2]["content"][0] == {"type": "text", "text": "[process lane steer_work result]\nqueued"}
     assert messages[3]["content"][0] == {"type": "thinking", "thinking": "open gmail first", "signature": "sig-a"}
     assert messages[4]["content"][0]["type"] == "tool_result"
 
 
-def test_the_conversation_lane_sees_reasonings_results_as_one_line_outcomes() -> None:
+def test_the_process_lane_sees_work_lane_results_as_one_line_outcomes() -> None:
     sent: dict[str, object] = {}
     adapter = _anthropic(sent, [SimpleNamespace(type="tool_use", id="c9", name="yield", input={})])
     page = "Due this week\n" + "row " * 200
@@ -120,7 +120,7 @@ def test_the_conversation_lane_sees_reasonings_results_as_one_line_outcomes() ->
                 {
                     "role": "assistant",
                     "provider": "anthropic",
-                    "lane": "reasoning",
+                    "lane": "work",
                     "content": [
                         {"type": "thinking", "thinking": "plan " * 300, "signature": "sig-r"},
                         {"type": "tool_use", "id": "r1", "name": "terminal_read", "input": {"path": "due.md"}},
@@ -131,14 +131,14 @@ def test_the_conversation_lane_sees_reasonings_results_as_one_line_outcomes() ->
         }
     )
 
-    adapter.complete(request, "conversation", "lane")
+    adapter.complete(request, "process", "lane")
 
     messages = sent["messages"]
     other = messages[1]["content"]
-    assert f"… ({len('[reasoning lane thinking]') + 1 + len('plan ' * 300)} chars)" in other
-    assert '[reasoning lane called terminal_read] {"path": "due.md"}' in other
+    assert f"… ({len('[work lane thinking]') + 1 + len('plan ' * 300)} chars)" in other
+    assert '[work lane called terminal_read] {"path": "due.md"}' in other
     outcome = messages[2]["content"][0]["text"]
-    assert outcome.startswith("[reasoning lane terminal_read result]\nDue this week row row")
+    assert outcome.startswith("[work lane terminal_read result]\nDue this week row row")
     assert "\n" not in outcome.split("\n", 1)[1]
     assert outcome.endswith(f"… ({len(' '.join(page.split()))} chars)")
 
@@ -156,7 +156,7 @@ def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
                 {
                     "role": "assistant",
                     "provider": "anthropic",
-                    "lane": "reasoning",
+                    "lane": "work",
                     "content": [
                         {"type": "thinking", "thinking": "retire it", "signature": "sig-r"},
                         {"type": "tool_use", "id": "r1", "name": "manage_agent", "input": {"retired": True}},
@@ -166,7 +166,7 @@ def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
                 {
                     "role": "assistant",
                     "provider": "anthropic",
-                    "lane": "conversation",
+                    "lane": "process",
                     "content": [
                         {"type": "thinking", "thinking": "report it", "signature": "sig-c"},
                         {"type": "tool_use", "id": "c1", "name": "dispatch_message", "input": {}},
@@ -177,13 +177,13 @@ def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
         }
     )
 
-    adapter.complete(request, "conversation", "lane")
+    adapter.complete(request, "process", "lane")
 
     messages = sent["messages"]
     other = messages[1]["content"]
     assert isinstance(other, str)
-    assert "[reasoning lane called manage_agent]" in other
-    assert messages[2]["content"][0] == {"type": "text", "text": "[reasoning lane manage_agent result]\nok"}
+    assert "[work lane called manage_agent]" in other
+    assert messages[2]["content"][0] == {"type": "text", "text": "[work lane manage_agent result]\nok"}
     assert messages[3]["content"][0] == {"type": "thinking", "thinking": "report it", "signature": "sig-c"}
     assert messages[4]["content"][0]["type"] == "tool_result"
 
@@ -202,7 +202,7 @@ def test_anthropic_keeps_thinking_leading_its_turn_after_other_assistant_text() 
                 {
                     "role": "assistant",
                     "provider": "anthropic",
-                    "lane": "reasoning",
+                    "lane": "work",
                     "content": [
                         {"type": "thinking", "thinking": "plan", "signature": "s"},
                         {"type": "text", "text": "Starting."},
@@ -213,7 +213,7 @@ def test_anthropic_keeps_thinking_leading_its_turn_after_other_assistant_text() 
         }
     )
 
-    adapter.complete(request, "reasoning", "lane")
+    adapter.complete(request, "work", "lane")
 
     messages = sent["messages"]
     assert [m["role"] for m in messages] == ["user", "assistant", "user", "assistant", "user"]
@@ -233,7 +233,7 @@ def test_gemini_gives_claude_tool_calls_the_placeholder_signature() -> None:
             {
                 "role": "assistant",
                 "provider": "anthropic",
-                "lane": "reasoning",
+                "lane": "work",
                 "content": [
                     {"type": "thinking", "thinking": "browser is down", "signature": "sig-a"},
                     {"type": "redacted_thinking", "data": "xyz"},
@@ -248,7 +248,7 @@ def test_gemini_gives_claude_tool_calls_the_placeholder_signature() -> None:
             {
                 "role": "assistant",
                 "provider": "gemini",
-                "lane": "conversation",
+                "lane": "process",
                 "content": [
                     {"type": "thinking", "thinking": "tell Ankur", "signature": "c2ln"},
                     {"type": "tool_use", "id": "c1", "name": "dispatch_message", "input": {}, "thought_signature": "c2ln"},
@@ -257,10 +257,10 @@ def test_gemini_gives_claude_tool_calls_the_placeholder_signature() -> None:
         ),
     ]
 
-    contents = _to_contents(messages, "conversation")
+    contents = _to_contents(messages, "process")
 
     claude = contents[1].parts
-    assert claude[0].text == "[reasoning lane thinking]\nbrowser is down"
+    assert claude[0].text == "[work lane thinking]\nbrowser is down"
     assert not claude[0].thought
     assert len(claude) == 2
     assert claude[1].function_call.name == "browser_navigate"

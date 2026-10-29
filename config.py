@@ -1,17 +1,12 @@
-"""Typed process config. The only module that reads the environment or config.toml."""
+"""Typed process config. Every model, budget and limit is fixed here in code, so changing one is a push to Dwar; only provider keys come from the environment."""
 
 from __future__ import annotations
 
-import tomllib
 from functools import lru_cache
-from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-_SERVICE_ROOT = Path(__file__).resolve().parent
-_TOML_PATH = _SERVICE_ROOT / "config.toml"
 
 
 class Env(BaseSettings):
@@ -30,27 +25,12 @@ class Env(BaseSettings):
 
 
 class ChatEndpoint(BaseModel):
-    """One chat endpoint in `config.toml`: provider, model, output budget, and Anthropic thinking effort."""
+    """One chat endpoint: provider, model, output budget, and Anthropic thinking effort (None for other providers)."""
 
-    provider: str
+    provider: Literal["anthropic", "gemini"]
     model: str
     max_tokens: int
-    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = None
-    """Anthropic `output_config.effort`; required for anthropic endpoints and rejected for the rest."""
-
-    @field_validator("provider", "model")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
-
-    @field_validator("max_tokens")
-    @classmethod
-    def positive_tokens(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None
 
     @model_validator(mode="after")
     def effort_matches_provider(self) -> ChatEndpoint:
@@ -62,108 +42,34 @@ class ChatEndpoint(BaseModel):
 
 
 class Embed(BaseModel):
-    provider: str
+    provider: Literal["openai"]
     model: str
     dimensions: int
     max_batch_size: int
     max_text_length: int
 
-    @field_validator("provider", "model")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
-
-    @field_validator("dimensions", "max_batch_size", "max_text_length")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
-
 
 class ImageDescribe(BaseModel):
-    provider: str
+    provider: Literal["gemini"]
     model: str
     max_tokens: int
     max_bytes: int
     max_prompt_length: int
     allowed_media_types: tuple[str, ...]
 
-    @field_validator("provider", "model")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
-
-    @field_validator("max_tokens", "max_bytes", "max_prompt_length")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
-
-    @field_validator("allowed_media_types")
-    @classmethod
-    def media_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value:
-            raise ValueError("must not be empty")
-        if any(not item.strip() for item in value):
-            raise ValueError("must not contain empty values")
-        return value
-
 
 class ImageCreate(BaseModel):
-    provider: str
+    provider: Literal["gemini"]
     model: str
     max_prompt_length: int
 
-    @field_validator("provider", "model")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
-
-    @field_validator("max_prompt_length")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
-
 
 class SpeechTranscribe(BaseModel):
-    provider: str
+    provider: Literal["deepgram"]
     model: str
     language: str
     max_bytes: int
     allowed_media_types: tuple[str, ...]
-
-    @field_validator("provider", "model", "language")
-    @classmethod
-    def not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("must not be empty")
-        return value
-
-    @field_validator("max_bytes")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
-
-    @field_validator("allowed_media_types")
-    @classmethod
-    def media_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value:
-            raise ValueError("must not be empty")
-        if any(not item.strip() for item in value):
-            raise ValueError("must not contain empty values")
-        return value
 
 
 class Retry(BaseModel):
@@ -173,109 +79,119 @@ class Retry(BaseModel):
     backoff_seconds: tuple[float, ...]
     timeout_seconds: float
 
-    @field_validator("attempts")
-    @classmethod
-    def positive_attempts(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
-
-    @field_validator("backoff_seconds")
-    @classmethod
-    def valid_backoff(cls, value: tuple[float, ...]) -> tuple[float, ...]:
-        if not value:
-            raise ValueError("must not be empty")
-        if any(item < 0 for item in value):
-            raise ValueError("values must be >= 0")
-        return value
-
-    @field_validator("timeout_seconds")
-    @classmethod
-    def positive_timeout(cls, value: float) -> float:
-        if value <= 0:
-            raise ValueError("must be > 0")
-        return value
-
 
 class Web(BaseModel):
     """Hath's web tools (inference/web.py): the small model that runs searches and answers
-    questions from fetched pages, and the bounds on what one call may fetch. Every field has
-    a default, so a box config without a [web] section still loads."""
+    questions from fetched pages, and the bounds on what one call may fetch."""
 
-    model: str = "claude-haiku-5-5"
-    search_tool: str = "web_search_20250305"
-    search_max_tokens: int = 2048
-    answer_max_tokens: int = 1024
-    answer_page_chars: int = 60_000
-    max_page_chars: int = 200_000
-    max_page_bytes: int = 5_000_000
-    max_urls: int = 10
-    max_parallel: int = 5
-    max_redirects: int = 5
-    fetch_timeout_seconds: float = 20.0
-    user_agent: str = "Mozilla/5.0 (compatible; DadiFetch/1.0; +https://github.com/dadi-os)"
-
-    @field_validator("search_max_tokens", "answer_max_tokens", "answer_page_chars", "max_page_chars", "max_page_bytes", "max_urls", "max_parallel")
-    @classmethod
-    def positive(cls, value: int) -> int:
-        if value < 1:
-            raise ValueError("must be >= 1")
-        return value
+    model: str
+    search_tool: str
+    search_max_tokens: int
+    answer_max_tokens: int
+    answer_page_chars: int
+    max_page_chars: int
+    max_page_bytes: int
+    max_urls: int
+    max_parallel: int
+    max_redirects: int
+    fetch_timeout_seconds: float
+    user_agent: str
 
 
-class ChatFile(BaseModel):
-    reasoning: ChatEndpoint
-    conversation: ChatEndpoint
+class Chat(BaseModel):
+    """The chat endpoints: an agent's two lanes, work (the job, with its tools) and
+    process (reading what arrives and answering it), plus complete for callers that
+    bring their own system prompt."""
+
+    work: ChatEndpoint
+    process: ChatEndpoint
     complete: ChatEndpoint
 
 
-class ImageFile(BaseModel):
+class Image(BaseModel):
     describe: ImageDescribe
     create: ImageCreate
 
 
-class SpeechFile(BaseModel):
+class Speech(BaseModel):
     transcribe: SpeechTranscribe
 
 
-class FileConfig(BaseModel):
-    chat: ChatFile
-    embed: Embed
-    image: ImageFile
-    speech: SpeechFile
-    retry: Retry
-    web: Web = Web()
-
-
 class Config(BaseModel):
-    """The loaded service config: environment keys plus `config.toml`."""
+    """The service config: environment keys plus the settings below."""
 
     env: Env
-    chat: ChatFile
+    chat: Chat
     embed: Embed
-    image: ImageFile
-    speech: SpeechFile
+    image: Image
+    speech: Speech
     retry: Retry
     web: Web
 
 
-def _load_toml() -> FileConfig:
-    if not _TOML_PATH.is_file():
-        raise FileNotFoundError(f"missing config file: {_TOML_PATH}")
-    with _TOML_PATH.open("rb") as fh:
-        raw = tomllib.load(fh)
-    return FileConfig.model_validate(raw)
+CHAT = Chat(
+    work=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="xhigh"),
+    process=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="medium"),
+    complete=ChatEndpoint(provider="gemini", model="gemini-3.1-pro-preview", max_tokens=16384, effort=None),
+)
+
+EMBED = Embed(
+    provider="openai",
+    model="text-embedding-3-small",
+    dimensions=1536,
+    max_batch_size=64,
+    max_text_length=8192,
+)
+
+IMAGE = Image(
+    describe=ImageDescribe(
+        provider="gemini",
+        model="gemini-3.6-flash",
+        max_tokens=2048,
+        max_bytes=10_485_760,
+        max_prompt_length=4000,
+        allowed_media_types=("image/jpeg", "image/png", "image/webp", "image/gif"),
+    ),
+    create=ImageCreate(provider="gemini", model="gemini-3.1-flash-image", max_prompt_length=4000),
+)
+
+SPEECH = Speech(
+    transcribe=SpeechTranscribe(
+        provider="deepgram",
+        model="nova-3",
+        language="multi",
+        max_bytes=26_214_400,
+        allowed_media_types=(
+            "audio/wav",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/ogg",
+            "audio/webm",
+            "audio/flac",
+            "audio/aac",
+            "audio/x-wav",
+        ),
+    ),
+)
+
+RETRY = Retry(attempts=3, backoff_seconds=(0.5, 1.0, 2.0), timeout_seconds=300)
+
+WEB = Web(
+    model="claude-haiku-5-5",
+    search_tool="web_search_20250305",
+    search_max_tokens=2048,
+    answer_max_tokens=1024,
+    answer_page_chars=60_000,
+    max_page_chars=200_000,
+    max_page_bytes=5_000_000,
+    max_urls=10,
+    max_parallel=5,
+    max_redirects=5,
+    fetch_timeout_seconds=20.0,
+    user_agent="Mozilla/5.0 (compatible; DadiFetch/1.0; +https://github.com/dadi-os)",
+)
 
 
 @lru_cache
 def get_config() -> Config:
-    file_cfg = _load_toml()
-    return Config(
-        env=Env(),
-        chat=file_cfg.chat,
-        embed=file_cfg.embed,
-        image=file_cfg.image,
-        speech=file_cfg.speech,
-        retry=file_cfg.retry,
-        web=file_cfg.web,
-    )
+    return Config(env=Env(), chat=CHAT, embed=EMBED, image=IMAGE, speech=SPEECH, retry=RETRY, web=WEB)

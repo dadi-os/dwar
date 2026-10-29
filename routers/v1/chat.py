@@ -16,14 +16,14 @@ def _to_http(response: InternalChatResponse) -> ChatResponse:
     return ChatResponse.model_validate(response.model_dump(exclude={"provider_stop_reason"}))
 
 
-@router.post("/reasoning", response_model=ChatResponse)
-def reasoning(body: ChatRequest) -> ChatResponse:
-    return _to_http(complete_chat("reasoning", _to_internal(body)))
+@router.post("/work", response_model=ChatResponse)
+def work(body: ChatRequest) -> ChatResponse:
+    return _to_http(complete_chat("work", _to_internal(body)))
 
 
-@router.post("/conversation", response_model=ChatResponse)
-def conversation(body: ChatRequest) -> ChatResponse:
-    return _to_http(complete_chat("conversation", _to_internal(body)))
+@router.post("/process", response_model=ChatResponse)
+def process(body: ChatRequest) -> ChatResponse:
+    return _to_http(complete_chat("process", _to_internal(body)))
 
 
 @router.post("/complete", response_model=ChatResponse)

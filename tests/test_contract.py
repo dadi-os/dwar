@@ -9,9 +9,9 @@ from fastapi.testclient import TestClient
 
 from config import get_config
 from lanes import (
-    conversation_lane_block,
     describe_instruction,
-    reasoning_lane_block,
+    process_lane_block,
+    work_lane_block,
 )
 
 
@@ -40,9 +40,9 @@ def test_embed_empty_texts_invalid_request(client: TestClient) -> None:
     assert body["error"]["type"] == "invalid_request"
 
 
-def test_reasoning_without_key_provider_unconfigured(client: TestClient) -> None:
+def test_work_without_key_provider_unconfigured(client: TestClient) -> None:
     response = client.post(
-        "/chat/reasoning",
+        "/chat/work",
         json={
             "system": "sys",
             "tool_choice": "auto",
@@ -55,9 +55,9 @@ def test_reasoning_without_key_provider_unconfigured(client: TestClient) -> None
     assert "ANTHROPIC_API_KEY" in body["error"]["message"]
 
 
-def test_conversation_without_key_provider_unconfigured(client: TestClient) -> None:
+def test_process_without_key_provider_unconfigured(client: TestClient) -> None:
     response = client.post(
-        "/chat/conversation",
+        "/chat/process",
         json={
             "system": "sys",
             "tool_choice": "auto",
@@ -67,7 +67,7 @@ def test_conversation_without_key_provider_unconfigured(client: TestClient) -> N
     assert response.status_code == 503
     body = response.json()
     assert body["error"]["type"] == "provider_unconfigured"
-    assert "GEMINI_API_KEY" in body["error"]["message"]
+    assert "ANTHROPIC_API_KEY" in body["error"]["message"]
 
 
 def test_complete_without_key_provider_unconfigured(client: TestClient) -> None:
@@ -94,17 +94,17 @@ def test_embed_without_key_provider_unconfigured(client: TestClient) -> None:
 
 
 def test_lane_prompts_nonempty() -> None:
-    assert reasoning_lane_block()
-    assert conversation_lane_block()
+    assert work_lane_block()
+    assert process_lane_block()
     assert describe_instruction()
 
 
-def test_conversation_prompt_asks_for_markdown() -> None:
-    text = conversation_lane_block()
+def test_process_prompt_asks_for_markdown() -> None:
+    text = process_lane_block()
     assert "Markdown" in text
     assert "dispatch_message" in text
     assert "decline_handoff" in text
-    assert "steer_reasoning" in text
+    assert "steer_work" in text
     assert "terminate" in text
     assert "route_message" not in text
     assert "kebab-case" in text
@@ -112,8 +112,8 @@ def test_conversation_prompt_asks_for_markdown() -> None:
     assert "point of contact" in text
 
 
-def test_reasoning_prompt_has_no_router_branch() -> None:
-    text = reasoning_lane_block()
+def test_work_prompt_has_no_router_branch() -> None:
+    text = work_lane_block()
     assert "route_message" not in text
     assert "router" not in text
     assert "hand_off" in text
@@ -174,7 +174,7 @@ def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -
 def test_config_loads() -> None:
     get_config.cache_clear()
     cfg = get_config()
-    assert cfg.chat.reasoning.provider == "anthropic"
+    assert cfg.chat.work.provider == "anthropic"
     assert cfg.chat.complete.provider == "gemini"
     assert cfg.embed.dimensions > 0
     assert cfg.retry.attempts >= 1
@@ -380,7 +380,7 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
         }
     )
 
-    response = adapter.complete(request, "reasoning", "lane doctrine")
+    response = adapter.complete(request, "work", "lane doctrine")
 
     messages = sent["messages"]
     assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
@@ -424,7 +424,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
                     "role": "assistant",
                     "content": [{"type": "tool_use", "id": "t0", "name": "wait", "input": {}}],
                     "provider": "anthropic",
-                    "lane": "reasoning",
+                    "lane": "work",
                 },
                 {
                     "role": "user",
@@ -434,7 +434,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
         }
     )
 
-    adapter.complete(request, "reasoning", "lane doctrine")
+    adapter.complete(request, "work", "lane doctrine")
 
     hour = {"type": "ephemeral", "ttl": "1h"}
     assert sent["system"][-1]["cache_control"] == hour
@@ -446,7 +446,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
 
 def test_chat_rejects_more_than_one_cache_breakpoint(client: TestClient) -> None:
     response = client.post(
-        "/chat/reasoning",
+        "/chat/work",
         json={
             "system": "sys",
             "tool_choice": "auto",

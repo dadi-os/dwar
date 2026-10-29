@@ -27,12 +27,12 @@ CONTINUE = "[continue]"
 """Neutral user turn that separates two assistant turns without adding meaning."""
 
 OUTCOME_CHARS = 200
-"""How much of a reasoning tool result the conversation lane sees: one line,
+"""How much of a work-lane tool result the process lane sees: one line,
 enough to know what the call found, not the raw page or file it returned."""
 
 THINKING_CHARS = 600
-"""How much of a reasoning thinking block the conversation lane sees: the gist
-of what reasoning is doing, not the whole working."""
+"""How much of a work-lane thinking block the process lane sees: the gist
+of what the work lane is doing, not the whole working."""
 
 
 def is_foreign(message: Message, provider: Provider, lane: Lane | None) -> bool:
@@ -57,10 +57,10 @@ def foreign_turns_as_text(
     """foreign_turns_as_text rewrites foreign assistant turns, and the results of
     their tool calls, as labelled text, so the model neither replays state it did
     not sign nor reads the other lane's tool calls as its own. A foreign turn with
-    nothing readable (only redacted thinking) is dropped. The conversation lane
-    sees reasoning's work slim: calls whole, results as one-line outcomes and
+    nothing readable (only redacted thinking) is dropped. The process lane
+    sees the work lane's steps slim: calls whole, results as one-line outcomes and
     thinking clipped, since it reports progress and never redoes the work."""
-    slim = lane == "conversation"
+    slim = lane == "process"
     foreign_calls: dict[str, tuple[str, str]] = {}
     out: list[Message] = []
     for message in messages:

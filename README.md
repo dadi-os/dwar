@@ -14,7 +14,7 @@ Dwar is unauthenticated by design. Device auth is not this module’s job.
 ```
 dwar/
   app.py              ASGI app, middleware, exception handlers
-  config.py           config.toml + env
+  config.py           models, budgets and limits in code; keys from env
   logutil.py          JSON logging (nas contract)
   errors.py           DwarError / TransportError
   lanes.py            lane prompt loaders
@@ -22,16 +22,15 @@ dwar/
   routers/v1/         HTTP routes + schemas
   prompts/            lane prompt text
   tests/              pytest behavior suite
-  config.toml
 ```
 
 ## Config vs env
 
-`config.toml` (checked in) holds model IDs, token limits, the reasoning lane's Anthropic effort level, size caps, retry, and timeout.
+`config.py` holds every model ID, token limit, Anthropic effort level, size cap, retry and timeout as constants. Changing a model or an effort is a push to Dwar; nothing on the box overrides them.
 
 `.env` holds provider keys only: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENAI_API_KEY`, `DEEPGRAM_API_KEY`. Host/port come from Nas.
 
-Dwar boots with empty keys allowed. Each route requires only its own key and returns `503` with `error.type` = `provider_unconfigured` if that key is unset. `config.toml` must be present and valid — fail at startup if missing or invalid.
+Dwar boots with empty keys allowed. Each route requires only its own key and returns `503` with `error.type` = `provider_unconfigured` if that key is unset.
 
 ## Local run
 
@@ -59,7 +58,7 @@ Concurrency cancels superseded runs on the same ref.
 
 Logs follow the nas JSON contract (`time`, `level`, `service=dwar`, `msg`, plus `code`, `request_id`, request summary fields). Uvicorn access logs and the provider SDKs' per-call info lines (`httpx`, `google_genai`) are off; one structured `request` line per call is emitted instead (healthy `/health` probes are not logged).
 
-Every served inference call also emits one `inference` line: `caller`, `route` (`chat.reasoning`, `chat.conversation`, `chat.complete`, `embed`, `image.describe`, `image.create`, `speech.transcribe`), `provider`, `model`, `duration_ms`, `request_id`, and the call's cost fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `stop_reason`; `audio_seconds` for speech). Prompt and response content are never logged. Dwar stays stateless — cost reporting is a LogQL query over these lines in Loki.
+Every served inference call also emits one `inference` line: `caller`, `route` (`chat.work`, `chat.process`, `chat.complete`, `embed`, `image.describe`, `image.create`, `speech.transcribe`), `provider`, `model`, `duration_ms`, `request_id`, and the call's cost fields (`input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `stop_reason`; `audio_seconds` for speech). Prompt and response content are never logged. Dwar stays stateless — cost reporting is a LogQL query over these lines in Loki.
 
 Every route except `/health` requires `X-Dadi-Caller` naming the service and actor that pays for the call (`hath/<agent id>`, `hath/router`, `yaad/ingest`, …); missing or blank is `invalid_request` (422).
 
@@ -81,19 +80,19 @@ See nas README for the shared infra catalog.
 | Method | Path | Model |
 | --- | --- | --- |
 | `GET` | `/health` | |
-| `POST` | `/chat/reasoning` | Anthropic (config.toml) |
-| `POST` | `/chat/conversation` | Gemini |
-| `POST` | `/chat/complete` | Gemini |
-| `POST` | `/embed` | OpenAI embeddings |
-| `POST` | `/image/describe` | Gemini |
-| `POST` | `/image/create` | Gemini image |
+| `POST` | `/chat/work` | Claude Haiku 5.5, effort `xhigh` |
+| `POST` | `/chat/process` | Claude Haiku 5.5, effort `medium` |
+| `POST` | `/chat/complete` | Gemini 3.1 Pro |
+| `POST` | `/embed` | OpenAI text-embedding-3-small |
+| `POST` | `/image/describe` | Gemini 3.6 Flash |
+| `POST` | `/image/create` | Gemini 3.1 Flash Image |
 | `POST` | `/speech/transcribe` | Deepgram |
 
 Unknown top-level fields are a 422. There is no model, temperature, or provider field on any request.
 
 ### Chat
 
-`/chat/reasoning` and `/chat/conversation` prepend a Dwar lane prompt to `system`. `/chat/complete` does not — the caller's `system` is the whole instruction.
+`/chat/work` and `/chat/process` prepend a Dwar lane prompt to `system`: an agent's work lane does the job with its tools, its process lane reads what arrives, answers, steers the work lane and sends its hand-offs. `/chat/complete` does not — the caller's `system` is the whole instruction.
 
 Chat endpoints share this body:
 
@@ -116,9 +115,9 @@ Chat endpoints share this body:
 
 `tools` may be omitted or empty. `tool_choice` is required: `auto` lets the model think and write before, alongside, or instead of a tool call; `any` forces a tool call every turn, which leaves no room to think (use it for one-shot structured extraction, not agent loops).
 
-Message `content` is a string or a list of `text` / `thinking` / `redacted_thinking` / `tool_use` / `tool_result` blocks. `thinking`, `redacted_thinking` and `tool_use` only on `assistant`; `tool_result` only on `user`. An assistant message may carry `provider` (`anthropic` | `gemini`) and `lane` (`reasoning` | `conversation`) naming who produced it; send back exactly what a response returned, with its `provider`. At most one message may set `cache_breakpoint: true` to end a prefix the caller resends unchanged across loops (Hath marks the transcript a wake starts from); a merged turn carries the mark.
+Message `content` is a string or a list of `text` / `thinking` / `redacted_thinking` / `tool_use` / `tool_result` blocks. `thinking`, `redacted_thinking` and `tool_use` only on `assistant`; `tool_result` only on `user`. An assistant message may carry `provider` (`anthropic` | `gemini`) and `lane` (`work` | `process`) naming who produced it; send back exactly what a response returned, with its `provider`. At most one message may set `cache_breakpoint: true` to end a prefix the caller resends unchanged across loops (Hath marks the transcript a wake starts from); a merged turn carries the mark.
 
-Each adapter replays its own provider's turns verbatim — thinking and signatures included, as Anthropic requires inside a tool loop — and translates the other provider's turns: Anthropic sees them as labelled text (`[conversation lane thinking]`, `[conversation lane called steer_reasoning] {…}`, and the matching results), Gemini sees the other provider's thinking as labelled text and its tool calls as function calls carrying Google's `skip_thought_signature_validator` placeholder signature. Consecutive same-role turns are merged (tool results first); an assistant turn that opens with thinking stays whole behind a `[continue]` user turn.
+Each adapter replays its own provider's turns verbatim — thinking and signatures included, as Anthropic requires inside a tool loop — and translates the other provider's turns: Anthropic sees them as labelled text (`[process lane thinking]`, `[process lane called steer_work] {…}`, and the matching results), Gemini sees the other provider's thinking as labelled text and its tool calls as function calls carrying Google's `skip_thought_signature_validator` placeholder signature. Consecutive same-role turns are merged (tool results first); an assistant turn that opens with thinking stays whole behind a `[continue]` user turn.
 
 Response:
 

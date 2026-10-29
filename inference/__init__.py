@@ -21,13 +21,13 @@ from inference.types import (
     TranscribeResult,
 )
 from lanes import (
-    conversation_lane_block,
     describe_instruction,
-    reasoning_lane_block,
+    process_lane_block,
+    work_lane_block,
 )
 from logutil import caller_var, log_extra, request_id_var
 
-Lane = Literal["reasoning", "conversation"]
+Lane = Literal["work", "process"]
 
 logger = logging.getLogger("dwar")
 
@@ -142,12 +142,12 @@ def _with_retry(call):
 def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
     """Run one chat turn on the lane's configured model, with that lane's Dwar block ahead of the caller's system prompt."""
     cfg = get_config()
-    if lane == "reasoning":
-        endpoint = cfg.chat.reasoning
-        lane_block = reasoning_lane_block()
+    if lane == "work":
+        endpoint = cfg.chat.work
+        lane_block = work_lane_block()
     else:
-        endpoint = cfg.chat.conversation
-        lane_block = conversation_lane_block()
+        endpoint = cfg.chat.process
+        lane_block = process_lane_block()
     return _logged_chat(f"chat.{lane}", endpoint, request, lane, lane_block)
 
 

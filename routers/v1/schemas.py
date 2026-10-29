@@ -17,7 +17,7 @@ class _Contract(BaseModel):
 
 
 Provider = Literal["anthropic", "gemini"]
-Lane = Literal["reasoning", "conversation"]
+Lane = Literal["work", "process"]
 ToolChoice = Literal["auto", "any"]
 
 

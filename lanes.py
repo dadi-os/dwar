@@ -18,14 +18,14 @@ def _load(name: str) -> str:
     return text
 
 
-def reasoning_lane_block() -> str:
-    """The system block Dwar prepends on the reasoning lane (`prompts/reasoning.txt`)."""
-    return _load("reasoning.txt")
+def work_lane_block() -> str:
+    """The system block Dwar prepends on the work lane (`prompts/work.txt`)."""
+    return _load("work.txt")
 
 
-def conversation_lane_block() -> str:
-    """The system block Dwar prepends on the conversation lane (`prompts/conversation.txt`)."""
-    return _load("conversation.txt")
+def process_lane_block() -> str:
+    """The system block Dwar prepends on the process lane (`prompts/process.txt`)."""
+    return _load("process.txt")
 
 
 def describe_instruction() -> str:
