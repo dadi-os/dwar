@@ -101,7 +101,7 @@ class Web(BaseModel):
 class Chat(BaseModel):
     """The chat endpoints: an agent's two lanes, work (the job, with its tools) and
     process (reading what arrives and answering it), plus complete for callers that
-    bring their own system prompt."""
+    bring their own system prompt (Nas's browser and terminal helpers, Hath's router)."""
 
     work: ChatEndpoint
     process: ChatEndpoint
@@ -132,7 +132,7 @@ class Config(BaseModel):
 CHAT = Chat(
     work=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="xhigh"),
     process=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="medium"),
-    complete=ChatEndpoint(provider="gemini", model="gemini-3.1-pro-preview", max_tokens=16384, effort=None),
+    complete=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="high"),
 )
 
 EMBED = Embed(
