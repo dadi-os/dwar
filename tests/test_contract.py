@@ -82,7 +82,7 @@ def test_complete_without_key_provider_unconfigured(client: TestClient) -> None:
     assert response.status_code == 503
     body = response.json()
     assert body["error"]["type"] == "provider_unconfigured"
-    assert "GEMINI_API_KEY" in body["error"]["message"]
+    assert "ANTHROPIC_API_KEY" in body["error"]["message"]
 
 
 def test_embed_without_key_provider_unconfigured(client: TestClient) -> None:
@@ -102,22 +102,28 @@ def test_lane_prompts_nonempty() -> None:
 def test_process_prompt_asks_for_markdown() -> None:
     text = process_lane_block()
     assert "Markdown" in text
-    assert "dispatch_message" in text
-    assert "decline_handoff" in text
+    assert "send" in text
+    assert "[Messages from work]" in text
+    assert "[Status]" in text
     assert "steer_work" in text
     assert "terminate" in text
     assert "route_message" not in text
     assert "kebab-case" in text
-    assert "parent" in text
     assert "point of contact" in text
+    for removed in ("dispatch_message", "decline_handoff", "forward_attachment", "hand_off"):
+        assert removed not in text
 
 
 def test_work_prompt_has_no_router_branch() -> None:
     text = work_lane_block()
     assert "route_message" not in text
     assert "router" not in text
-    assert "hand_off" in text
-    assert "send_message" in text
+    assert "message" in text
+    assert "steer_browser" in text
+    assert "wait" in text
+    assert "expects_reply" in text
+    for removed in ("hand_off", "send_message", "create_attachment"):
+        assert removed not in text
     assert "Do not invent tool names" in text or "do not invent tool names" in text.lower()
 
 
@@ -154,7 +160,7 @@ def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -
     seen: dict[str, object] = {}
     monkeypatch.setattr("inference._chat_adapter", lambda endpoint: _fake_chat_adapter(seen))
     monkeypatch.setattr("inference._with_retry", lambda call: call())
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     get_config.cache_clear()
     caller_var.set("tests/direct")
     request_id_var.set("req-direct")
@@ -175,7 +181,7 @@ def test_config_loads() -> None:
     get_config.cache_clear()
     cfg = get_config()
     assert cfg.chat.work.provider == "anthropic"
-    assert cfg.chat.complete.provider == "gemini"
+    assert cfg.chat.complete.provider == "anthropic"
     assert cfg.embed.dimensions > 0
     assert cfg.retry.attempts >= 1
 
@@ -277,7 +283,7 @@ def test_inference_log_line_attributes_cost(
             "tool_choice": "auto",
             "messages": [{"role": "user", "content": "hi"}],
         },
-        headers={"X-Dadi-Caller": "hath/browser-manager", "X-Request-Id": "req-42"},
+        headers={"X-Dadi-Caller": "nas/helper/browser", "X-Request-Id": "req-42"},
     )
 
     assert response.status_code == 200
@@ -285,7 +291,7 @@ def test_inference_log_line_attributes_cost(
     lines = [r for r in caplog.records if r.getMessage() == "inference"]
     assert len(lines) == 1
     line = lines[0]
-    assert line.caller == "hath/browser-manager"
+    assert line.caller == "nas/helper/browser"
     assert line.request_id == "req-42"
     assert line.route == "chat.complete"
     assert (line.input_tokens, line.output_tokens) == (11, 7)

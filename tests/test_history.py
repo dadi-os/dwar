@@ -169,7 +169,7 @@ def test_anthropic_turns_the_other_lanes_anthropic_turns_into_text() -> None:
                     "lane": "process",
                     "content": [
                         {"type": "thinking", "thinking": "report it", "signature": "sig-c"},
-                        {"type": "tool_use", "id": "c1", "name": "dispatch_message", "input": {}},
+                        {"type": "tool_use", "id": "c1", "name": "send", "input": {}},
                     ],
                 },
                 {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "sent"}]},
@@ -251,7 +251,7 @@ def test_gemini_gives_claude_tool_calls_the_placeholder_signature() -> None:
                 "lane": "process",
                 "content": [
                     {"type": "thinking", "thinking": "tell Ankur", "signature": "c2ln"},
-                    {"type": "tool_use", "id": "c1", "name": "dispatch_message", "input": {}, "thought_signature": "c2ln"},
+                    {"type": "tool_use", "id": "c1", "name": "send", "input": {}, "thought_signature": "c2ln"},
                 ],
             }
         ),

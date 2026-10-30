@@ -82,7 +82,7 @@ See nas README for the shared infra catalog.
 | `GET` | `/health` | |
 | `POST` | `/chat/work` | Claude Haiku 5.5, effort `xhigh` |
 | `POST` | `/chat/process` | Claude Haiku 5.5, effort `medium` |
-| `POST` | `/chat/complete` | Gemini 3.1 Pro |
+| `POST` | `/chat/complete` | Claude Haiku 5.5, effort `high` |
 | `POST` | `/embed` | OpenAI text-embedding-3-small |
 | `POST` | `/image/describe` | Gemini 3.6 Flash |
 | `POST` | `/image/create` | Gemini 3.1 Flash Image |
@@ -92,7 +92,7 @@ Unknown top-level fields are a 422. There is no model, temperature, or provider 
 
 ### Chat
 
-`/chat/work` and `/chat/process` prepend a Dwar lane prompt to `system`: an agent's work lane does the job with its tools, its process lane reads what arrives, answers, steers the work lane and sends its hand-offs. `/chat/complete` does not — the caller's `system` is the whole instruction.
+`/chat/work` and `/chat/process` prepend a Dwar lane prompt to `system`: an agent's work lane does the job with its tools, its process lane reads what arrives, answers, steers the work lane and sends the messages the work lane queues. `/chat/complete` does not — the caller's `system` is the whole instruction.
 
 Chat endpoints share this body:
 
