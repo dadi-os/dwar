@@ -142,7 +142,7 @@ Response:
 }
 ```
 
-`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic adaptive thinking requested with `display: "summarized"`, since current Claude models return empty thinking text by default; or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the last message block is a five-minute prompt-cache breakpoint, so an agent loop resending its history pays cache-read price for everything up to the previous step; the agent prompt and the `cache_breakpoint` turn are one-hour breakpoints, so the agent's next loop reads the system and its shared transcript instead of rewriting them. `input_tokens` counts only the uncached remainder.
+`stop_reason`: `end_turn` | `tool_use` | `max_tokens` | `error`. `content` keeps the provider's block order: thinking (Anthropic adaptive thinking requested with `display: "summarized"`, since current Claude models return empty thinking text by default; or Gemini thought summaries), text and tool calls, in one turn. On Anthropic, the last message block is a five-minute prompt-cache breakpoint, so an agent loop resending its history pays cache-read price for everything up to the previous step; the system prompt (its last block: the agent prompt on `/chat/agent`, `system` alone on `/chat/complete`) and the `cache_breakpoint` turn are one-hour breakpoints, so the next loop reads the tools, the system and its shared transcript instead of rewriting them; a request has at most three breakpoints, under Anthropic's limit of four. `input_tokens` counts only the uncached remainder.
 
 ### Embed
 

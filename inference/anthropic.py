@@ -25,7 +25,10 @@ from inference.types import (
 )
 
 _LONG_LIVED = {"type": "ephemeral", "ttl": "1h"}
-"""Cache entry for prefixes reused across loops: the agent prompt block and a cache_breakpoint turn."""
+"""Cache entry for prefixes reused across loops: the system prompt (its last block) and a cache_breakpoint turn.
+
+A request holds at most three breakpoints (system, cache_breakpoint turn, newest message), under Anthropic's limit of four.
+"""
 
 _SHORT_LIVED = {"type": "ephemeral"}
 """Five-minute cache entry on the newest message, read by the loop's next step."""
@@ -66,13 +69,9 @@ class AnthropicAdapter:
     ) -> ChatResponse:
         system: list[dict[str, Any]] = [{"type": "text", "text": request.system}]
         if agent_block is not None:
-            system.append(
-                {
-                    "type": "text",
-                    "text": agent_block,
-                    "cache_control": _LONG_LIVED,
-                }
-            )
+            system.append({"type": "text", "text": agent_block})
+        if system[-1]["text"]:
+            system[-1]["cache_control"] = _LONG_LIVED
         kwargs: dict[str, Any] = {
             "model": self._model,
             "max_tokens": self._max_tokens,
@@ -150,8 +149,8 @@ def _with_breakpoints(messages: list[Message]) -> list[dict[str, Any]]:
     one-hour entry: it ends the prefix the caller's next loop starts from too (an
     agent's next wake opens on the same transcript), so the steps in between keep
     it warm and the next loop reads it instead of rewriting it. Anthropic wants
-    longer-lived entries ahead of shorter ones, which is why the agent prompt block
-    is one-hour as well.
+    longer-lived entries ahead of shorter ones, which is why the system prompt's
+    last block is one-hour as well.
     """
     rendered = [_to_message(message) for message in messages]
     for index, message in enumerate(messages):

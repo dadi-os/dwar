@@ -433,6 +433,52 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
     assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
 
 
+def test_anthropic_caches_the_system_prompt_for_a_request_with_no_agent_block() -> None:
+    from types import SimpleNamespace
+
+    from inference.anthropic import AnthropicAdapter
+    from inference.types import ChatRequest
+
+    sent: dict[str, object] = {}
+
+    def create(**kwargs: object) -> SimpleNamespace:
+        sent.update(kwargs)
+        return SimpleNamespace(
+            content=[SimpleNamespace(type="text", text="ok")],
+            stop_reason="end_turn",
+            usage=SimpleNamespace(
+                input_tokens=1,
+                output_tokens=1,
+                cache_read_input_tokens=0,
+                cache_creation_input_tokens=0,
+            ),
+        )
+
+    adapter = AnthropicAdapter(api_key="k", model="m", max_tokens=10, effort="medium", timeout_seconds=1)
+    adapter._client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    request = ChatRequest.model_validate(
+        {
+            "system": "helper charter",
+            "tool_choice": "auto",
+            "messages": [
+                {"role": "user", "content": "read the page"},
+                {"role": "assistant", "content": "done", "cache_breakpoint": True},
+                {"role": "user", "content": "now the next"},
+            ],
+        }
+    )
+
+    adapter.complete(request, None)
+
+    hour = {"type": "ephemeral", "ttl": "1h"}
+    assert sent["system"] == [{"type": "text", "text": "helper charter", "cache_control": hour}]
+    messages = sent["messages"]
+    assert messages[1]["content"][-1]["cache_control"] == hour
+    assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
+    marks = sum("cache_control" in block for m in messages if isinstance(m["content"], list) for block in m["content"])
+    assert marks + 1 <= 4
+
+
 def test_chat_rejects_more_than_one_cache_breakpoint(client: TestClient) -> None:
     response = client.post(
         "/chat/agent",
