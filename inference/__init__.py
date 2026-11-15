@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Literal
 
 from config import ChatEndpoint, get_config
 from errors import DwarError, TransportError
@@ -20,14 +19,8 @@ from inference.types import (
     EmbedResult,
     TranscribeResult,
 )
-from lanes import (
-    describe_instruction,
-    process_lane_block,
-    work_lane_block,
-)
+from prompts import agent_prompt_block, describe_instruction
 from logutil import caller_var, log_extra, request_id_var
-
-Lane = Literal["work", "process"]
 
 logger = logging.getLogger("dwar")
 
@@ -139,34 +132,26 @@ def _with_retry(call):
             time.sleep(delay)
 
 
-def complete_chat(lane: Lane, request: ChatRequest) -> ChatResponse:
-    """Run one chat turn on the lane's configured model, with that lane's Dwar block ahead of the caller's system prompt."""
-    cfg = get_config()
-    if lane == "work":
-        endpoint = cfg.chat.work
-        lane_block = work_lane_block()
-    else:
-        endpoint = cfg.chat.process
-        lane_block = process_lane_block()
-    return _logged_chat(f"chat.{lane}", endpoint, request, lane, lane_block)
+def complete_agent(request: ChatRequest) -> ChatResponse:
+    """Run one agent-loop chat turn on the agent model, with Dwar's agent prompt ahead of the caller's system prompt."""
+    return _logged_chat("chat.agent", get_config().chat.agent, request, agent_prompt_block())
 
 
 def complete_text(request: ChatRequest) -> ChatResponse:
-    """Run chat with the caller's system prompt only — no Dwar lane block."""
-    return _logged_chat("chat.complete", get_config().chat.complete, request, None, None)
+    """Run chat with the caller's system prompt only — no Dwar agent prompt."""
+    return _logged_chat("chat.complete", get_config().chat.complete, request, None)
 
 
 def _logged_chat(
     route: str,
     endpoint: ChatEndpoint,
     request: ChatRequest,
-    lane: Lane | None,
-    lane_block: str | None,
+    agent_block: str | None,
 ) -> ChatResponse:
     """Run one chat call with retries on the endpoint's provider and log its usage."""
     adapter = _chat_adapter(endpoint)
     started = time.perf_counter()
-    response = _with_retry(lambda: adapter.complete(request, lane, lane_block))
+    response = _with_retry(lambda: adapter.complete(request, agent_block))
     _log_inference(
         route,
         endpoint.provider,

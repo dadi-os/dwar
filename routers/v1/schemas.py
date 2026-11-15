@@ -17,7 +17,6 @@ class _Contract(BaseModel):
 
 
 Provider = Literal["anthropic", "gemini"]
-Lane = Literal["work", "process"]
 ToolChoice = Literal["auto", "any"]
 
 
@@ -77,7 +76,6 @@ class Message(_Contract):
     verbatim (thinking, signatures) and translate the other provider's turns. None is
     plain text with no provider state (a transcript line).
     """
-    lane: Lane | None = None
     cache_breakpoint: bool = False
     """Ends a prefix the caller resends unchanged across requests beyond the one in
     flight (Hath: the transcript a wake starts from). Providers that cache by prefix
@@ -112,12 +110,8 @@ class ChatRequest(_Contract):
         if sum(message.cache_breakpoint for message in self.messages) > 1:
             raise ValueError("at most one message sets cache_breakpoint")
         for message in self.messages:
-            if message.role != "assistant" and (
-                message.provider is not None or message.lane is not None
-            ):
-                raise ValueError("provider and lane appear only on assistant messages")
-            if (message.provider is None) != (message.lane is None):
-                raise ValueError("provider and lane are set together")
+            if message.role != "assistant" and message.provider is not None:
+                raise ValueError("provider appears only on assistant messages")
             if isinstance(message.content, str):
                 continue
             for block in message.content:

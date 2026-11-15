@@ -99,12 +99,11 @@ class Web(BaseModel):
 
 
 class Chat(BaseModel):
-    """The chat endpoints: an agent's two lanes, work (the job, with its tools) and
-    process (reading what arrives and answering it), plus complete for callers that
-    bring their own system prompt (Nas's browser and terminal helpers, Hath's router)."""
+    """The chat endpoints: agent (an agent's loop, with its tools), plus complete for
+    callers that bring their own system prompt (Nas's browser and terminal helpers,
+    Hath's router)."""
 
-    work: ChatEndpoint
-    process: ChatEndpoint
+    agent: ChatEndpoint
     complete: ChatEndpoint
 
 
@@ -130,8 +129,7 @@ class Config(BaseModel):
 
 
 CHAT = Chat(
-    work=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="xhigh"),
-    process=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="medium"),
+    agent=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="xhigh"),
     complete=ChatEndpoint(provider="anthropic", model="claude-haiku-5-5", max_tokens=32768, effort="high"),
 )
 

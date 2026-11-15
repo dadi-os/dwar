@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from fastapi.testclient import TestClient
 
 from config import get_config
-from lanes import (
-    describe_instruction,
-    process_lane_block,
-    work_lane_block,
-)
+from prompts import agent_prompt_block, describe_instruction
 
 
 @pytest.fixture()
@@ -40,24 +37,9 @@ def test_embed_empty_texts_invalid_request(client: TestClient) -> None:
     assert body["error"]["type"] == "invalid_request"
 
 
-def test_work_without_key_provider_unconfigured(client: TestClient) -> None:
+def test_agent_without_key_provider_unconfigured(client: TestClient) -> None:
     response = client.post(
-        "/chat/work",
-        json={
-            "system": "sys",
-            "tool_choice": "auto",
-            "messages": [{"role": "user", "content": "hi"}],
-        },
-    )
-    assert response.status_code == 503
-    body = response.json()
-    assert body["error"]["type"] == "provider_unconfigured"
-    assert "ANTHROPIC_API_KEY" in body["error"]["message"]
-
-
-def test_process_without_key_provider_unconfigured(client: TestClient) -> None:
-    response = client.post(
-        "/chat/process",
+        "/chat/agent",
         json={
             "system": "sys",
             "tool_choice": "auto",
@@ -93,49 +75,49 @@ def test_embed_without_key_provider_unconfigured(client: TestClient) -> None:
     assert "OPENAI_API_KEY" in body["error"]["message"]
 
 
-def test_lane_prompts_nonempty() -> None:
-    assert work_lane_block()
-    assert process_lane_block()
+def test_prompts_nonempty() -> None:
+    assert agent_prompt_block()
     assert describe_instruction()
 
 
-def test_process_prompt_asks_for_markdown() -> None:
-    text = process_lane_block()
-    assert "Markdown" in text
-    assert "send" in text
-    assert "[Messages from work]" in text
-    assert "[Status]" in text
-    assert "steer_work" in text
-    assert "terminate" in text
-    assert "route_message" not in text
-    assert "kebab-case" in text
-    assert "point of contact" in text
-    for removed in ("dispatch_message", "decline_handoff", "forward_attachment", "hand_off"):
-        assert removed not in text
+def test_agent_prompt_is_a_single_loop_prompt() -> None:
+    text = agent_prompt_block()
+    for tool in ("send_message", "wait", "yield"):
+        assert tool in text
+    for absent in ("route_message", "router", "lane", "process", "steer_work", "hand_off", "create_attachment", "expects_reply"):
+        assert not re.search(rf"\b{absent}\b", text), absent
 
 
-def test_work_prompt_has_no_router_branch() -> None:
-    text = work_lane_block()
-    assert "route_message" not in text
-    assert "router" not in text
-    assert "message" in text
-    assert "steer_browser" in text
-    assert "wait" in text
-    assert "expects_reply" in text
-    for removed in ("hand_off", "send_message", "create_attachment"):
-        assert removed not in text
-    assert "Do not invent tool names" in text or "do not invent tool names" in text.lower()
+@pytest.mark.parametrize("path", ["/chat/work", "/chat/process"])
+def test_retired_chat_routes_are_gone(client: TestClient, path: str) -> None:
+    response = client.post(
+        path,
+        json={"system": "sys", "tool_choice": "auto", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert response.status_code in (404, 405)
+
+
+def test_message_lane_field_is_rejected(client: TestClient) -> None:
+    response = client.post(
+        "/chat/agent",
+        json={
+            "system": "sys",
+            "tool_choice": "auto",
+            "messages": [{"role": "assistant", "provider": "anthropic", "lane": "work", "content": "hi"}],
+        },
+    )
+    assert response.status_code == 422
 
 
 def _fake_chat_adapter(seen: dict[str, object]):
-    """Chat adapter stub that records the lane block and returns fixed usage including cache tokens."""
+    """Chat adapter stub that records the agent prompt and returns fixed usage including cache tokens."""
     from inference.types import ChatRequest, ChatResponse, TextBlock, Usage
 
     class _Adapter:
         def complete(
-            self, request: ChatRequest, lane: str | None, lane_block: str | None
+            self, request: ChatRequest, agent_block: str | None
         ) -> ChatResponse:
-            seen["lane_block"] = lane_block
+            seen["agent_block"] = agent_block
             return ChatResponse(
                 provider="gemini",
                 content=[TextBlock(type="text", text="ok")],
@@ -152,7 +134,7 @@ def _fake_chat_adapter(seen: dict[str, object]):
     return _Adapter()
 
 
-def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_complete_text_passes_no_agent_block(monkeypatch: pytest.MonkeyPatch) -> None:
     from inference import complete_text
     from inference.types import ChatRequest
     from logutil import caller_var, request_id_var
@@ -173,14 +155,14 @@ def test_complete_text_passes_none_lane_block(monkeypatch: pytest.MonkeyPatch) -
         )
     )
     assert response.stop_reason == "end_turn"
-    assert "lane_block" in seen
-    assert seen["lane_block"] is None
+    assert "agent_block" in seen
+    assert seen["agent_block"] is None
 
 
 def test_config_loads() -> None:
     get_config.cache_clear()
     cfg = get_config()
-    assert cfg.chat.work.provider == "anthropic"
+    assert cfg.chat.agent.provider == "anthropic"
     assert cfg.chat.complete.provider == "anthropic"
     assert cfg.embed.dimensions > 0
     assert cfg.retry.attempts >= 1
@@ -338,7 +320,7 @@ def test_gemini_empty_malformed_turn_maps_to_error_and_keeps_raw_reason() -> Non
         messages=[{"role": "user", "content": "relay the report"}],
     )
 
-    response = adapter.complete(request, None, None)
+    response = adapter.complete(request, None)
 
     assert response.content == []
     assert response.stop_reason == "error"
@@ -386,7 +368,7 @@ def test_anthropic_caches_history_and_reports_cache_usage() -> None:
         }
     )
 
-    response = adapter.complete(request, "work", "lane doctrine")
+    response = adapter.complete(request, "agent doctrine")
 
     messages = sent["messages"]
     assert messages[-1]["content"][-1]["cache_control"] == {"type": "ephemeral"}
@@ -430,7 +412,6 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
                     "role": "assistant",
                     "content": [{"type": "tool_use", "id": "t0", "name": "wait", "input": {}}],
                     "provider": "anthropic",
-                    "lane": "work",
                 },
                 {
                     "role": "user",
@@ -440,7 +421,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
         }
     )
 
-    adapter.complete(request, "work", "lane doctrine")
+    adapter.complete(request, "agent doctrine")
 
     hour = {"type": "ephemeral", "ttl": "1h"}
     assert sent["system"][-1]["cache_control"] == hour
@@ -452,7 +433,7 @@ def test_anthropic_keeps_a_long_lived_entry_on_the_cache_breakpoint_turn() -> No
 
 def test_chat_rejects_more_than_one_cache_breakpoint(client: TestClient) -> None:
     response = client.post(
-        "/chat/work",
+        "/chat/agent",
         json={
             "system": "sys",
             "tool_choice": "auto",

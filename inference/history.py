@@ -1,11 +1,10 @@
 """Provider-neutral history shaping shared by the chat adapters.
 
-A request's history holds assistant turns from both of an agent's lanes, which
-share one wake and may run on different providers. A lane's own turns (same
-provider, same lane) replay verbatim with their opaque state (thinking
+A request's history may hold assistant turns from more than one provider. A
+provider's own turns replay verbatim with their opaque state (thinking
 signatures, Gemini thought signatures). Every other turn is foreign: the other
-provider cannot replay its state, and the other lane's tool calls must not read
-as calls this lane made, so each adapter uses this module to reshape them.
+provider cannot replay its state, so each adapter uses this module to reshape
+them.
 """
 
 from __future__ import annotations
@@ -14,7 +13,6 @@ import json
 
 from inference.types import (
     ContentBlock,
-    Lane,
     Message,
     Provider,
     TextBlock,
@@ -26,46 +24,33 @@ from inference.types import (
 CONTINUE = "[continue]"
 """Neutral user turn that separates two assistant turns without adding meaning."""
 
-OUTCOME_CHARS = 200
-"""How much of a work-lane tool result the process lane sees: one line,
-enough to know what the call found, not the raw page or file it returned."""
 
-THINKING_CHARS = 600
-"""How much of a work-lane thinking block the process lane sees: the gist
-of what the work lane is doing, not the whole working."""
-
-
-def is_foreign(message: Message, provider: Provider, lane: Lane | None) -> bool:
-    """is_foreign reports whether an assistant turn came from another provider or
-    another lane. lane is None outside the lanes (chat.complete), where every
-    lane's turn is foreign."""
+def is_foreign(message: Message, provider: Provider) -> bool:
+    """is_foreign reports whether an assistant turn came from another provider."""
     return (
         message.role == "assistant"
         and message.provider is not None
-        and (message.provider != provider or message.lane != lane)
+        and message.provider != provider
     )
 
 
 def thinking_as_text(message: Message, block: ThinkingBlock) -> TextBlock:
-    """thinking_as_text renders another lane's thinking as a labelled text block."""
-    return TextBlock(type="text", text=f"[{message.lane} lane thinking]\n{block.thinking}")
+    """thinking_as_text renders another provider's thinking as a labelled text block."""
+    return TextBlock(type="text", text=f"[other model thinking]\n{block.thinking}")
 
 
 def foreign_turns_as_text(
-    messages: list[Message], provider: Provider, lane: Lane | None
+    messages: list[Message], provider: Provider
 ) -> list[Message]:
     """foreign_turns_as_text rewrites foreign assistant turns, and the results of
     their tool calls, as labelled text, so the model neither replays state it did
-    not sign nor reads the other lane's tool calls as its own. A foreign turn with
-    nothing readable (only redacted thinking) is dropped. The process lane
-    sees the work lane's steps slim: calls whole, results as one-line outcomes and
-    thinking clipped, since it reports progress and never redoes the work."""
-    slim = lane == "process"
+    not sign nor reads another provider's tool calls as its own. A foreign turn
+    with nothing readable (only redacted thinking) is dropped."""
     foreign_calls: dict[str, tuple[str, str]] = {}
     out: list[Message] = []
     for message in messages:
-        if is_foreign(message, provider, lane):
-            text = _assistant_as_text(message, foreign_calls, slim)
+        if is_foreign(message, provider):
+            text = _assistant_as_text(message, foreign_calls)
             if text:
                 out.append(
                     Message(
@@ -79,7 +64,7 @@ def foreign_turns_as_text(
             out.append(
                 Message(
                     role="user",
-                    content=_results_as_text(message.content, foreign_calls, slim),
+                    content=_results_as_text(message.content, foreign_calls),
                     cache_breakpoint=message.cache_breakpoint,
                 )
             )
@@ -88,20 +73,16 @@ def foreign_turns_as_text(
     return out
 
 
-def _assistant_as_text(
-    message: Message, foreign_calls: dict[str, tuple[str, str]], slim: bool
-) -> str:
+def _assistant_as_text(message: Message, foreign_calls: dict[str, tuple[str, str]]) -> str:
     """_assistant_as_text flattens one foreign assistant turn to labelled text and
-    records its tool call ids in foreign_calls so their results follow suit; slim
-    clips its thinking to THINKING_CHARS."""
+    records its tool call ids in foreign_calls so their results follow suit."""
     if isinstance(message.content, str):
         return message.content
-    label = f"{message.lane} lane"
+    label = "other model"
     lines: list[str] = []
     for block in message.content:
         if isinstance(block, ThinkingBlock):
-            text = thinking_as_text(message, block).text
-            lines.append(_clip(text, THINKING_CHARS) if slim else text)
+            lines.append(thinking_as_text(message, block).text)
         elif isinstance(block, TextBlock):
             lines.append(block.text)
         elif isinstance(block, ToolUseBlock):
@@ -111,35 +92,26 @@ def _assistant_as_text(
 
 
 def _results_as_text(
-    blocks: list[ContentBlock], foreign_calls: dict[str, tuple[str, str]], slim: bool
+    blocks: list[ContentBlock], foreign_calls: dict[str, tuple[str, str]]
 ) -> list[ContentBlock]:
     """_results_as_text turns results of foreign tool calls into labelled text,
-    leaving results of the provider's own calls untouched; slim makes each a
-    one-line outcome of OUTCOME_CHARS."""
+    leaving results of the provider's own calls untouched."""
     out: list[ContentBlock] = []
     for block in blocks:
         if isinstance(block, ToolResultBlock) and block.tool_use_id in foreign_calls:
             label, name = foreign_calls[block.tool_use_id]
             status = "error" if block.is_error else "result"
-            content = _clip(" ".join(block.content.split()), OUTCOME_CHARS) if slim else block.content
-            out.append(TextBlock(type="text", text=f"[{label} {name} {status}]\n{content}"))
+            out.append(TextBlock(type="text", text=f"[{label} {name} {status}]\n{block.content}"))
         else:
             out.append(block)
     return out
-
-
-def _clip(text: str, limit: int) -> str:
-    """_clip cuts text to limit characters and says how long it was."""
-    if len(text) <= limit:
-        return text
-    return f"{text[:limit]}… ({len(text)} chars)"
 
 
 def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list[Message]:
     """merge_turns folds consecutive same-role turns into one so roles alternate.
 
     Merged user turns put tool_result blocks first, as providers require right
-    after a tool call. Assistant turns from different providers or lanes are
+    after a tool call. Assistant turns from different providers are
     never merged; a CONTINUE user turn separates them so each keeps its own
     provider state. With split_before_thinking, an assistant turn that opens
     with thinking is also kept whole behind a CONTINUE turn (Anthropic wants
@@ -161,7 +133,6 @@ def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list
             if (
                 (split_before_thinking and opens_with_thinking)
                 or prev.provider != message.provider
-                or prev.lane != message.lane
             ):
                 out.append(Message(role="user", content=CONTINUE))
                 out.append(message)
@@ -170,7 +141,6 @@ def merge_turns(messages: list[Message], *, split_before_thinking: bool) -> list
                 role="assistant",
                 content=_blocks(prev) + _blocks(message),
                 provider=prev.provider,
-                lane=prev.lane,
                 cache_breakpoint=prev.cache_breakpoint or message.cache_breakpoint,
             )
             continue

@@ -18,7 +18,6 @@ from inference.types import (
     ChatResponse,
     CreateResult,
     DescribeResult,
-    Lane,
     Message,
     RedactedThinkingBlock,
     ResponseBlock,
@@ -91,11 +90,11 @@ class GeminiAdapter:
             raise TransportError(502, "upstream_unreachable", str(exc)) from exc
 
     def complete(
-        self, request: ChatRequest, lane: Lane | None, lane_block: str | None
+        self, request: ChatRequest, agent_block: str | None
     ) -> ChatResponse:
         parts = [genai_types.Part.from_text(text=request.system)]
-        if lane_block is not None:
-            parts.append(genai_types.Part.from_text(text=lane_block))
+        if agent_block is not None:
+            parts.append(genai_types.Part.from_text(text=agent_block))
         config_kwargs: dict[str, Any] = {
             "system_instruction": genai_types.Content(parts=parts),
             "max_output_tokens": self._max_tokens,
@@ -117,7 +116,7 @@ class GeminiAdapter:
             )
 
         response = self._generate(
-            _to_contents(request.messages, lane),
+            _to_contents(request.messages),
             genai_types.GenerateContentConfig(**config_kwargs),
         )
         parts = _candidate_parts(response)
@@ -306,7 +305,7 @@ def _to_declaration(tool: Tool) -> genai_types.FunctionDeclaration:
     )
 
 
-def _to_contents(messages: list[Message], lane: Lane | None) -> list[genai_types.Content]:
+def _to_contents(messages: list[Message]) -> list[genai_types.Content]:
     shaped = merge_turns(messages, split_before_thinking=False)
     names_by_id: dict[str, str] = {}
     for message in shaped:
@@ -320,15 +319,13 @@ def _to_contents(messages: list[Message], lane: Lane | None) -> list[genai_types
     for message in shaped:
         role = "model" if message.role == "assistant" else "user"
         contents.append(
-            genai_types.Content(role=role, parts=_to_parts(message, names_by_id, lane))
+            genai_types.Content(role=role, parts=_to_parts(message, names_by_id))
         )
     return contents
 
 
-def _to_parts(
-    message: Message, names_by_id: dict[str, str], lane: Lane | None
-) -> list[genai_types.Part]:
-    """_to_parts converts one message to Gemini parts. This lane's own Gemini
+def _to_parts(message: Message, names_by_id: dict[str, str]) -> list[genai_types.Part]:
+    """_to_parts converts one message to Gemini parts. Gemini's own
     turns replay verbatim, thoughts and signatures included. A foreign turn's
     thinking becomes labelled text (Gemini cannot use it as a thought), its
     redacted thinking is dropped (nothing readable), and its tool calls carry the
@@ -336,7 +333,7 @@ def _to_parts(
     if isinstance(message.content, str):
         return [genai_types.Part.from_text(text=message.content)]
 
-    foreign = is_foreign(message, "gemini", lane)
+    foreign = is_foreign(message, "gemini")
     parts: list[genai_types.Part] = []
     for block in message.content:
         if isinstance(block, TextBlock):

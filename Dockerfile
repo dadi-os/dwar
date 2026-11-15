@@ -3,7 +3,7 @@ FROM python:3.12-slim AS base
 WORKDIR /app
 
 COPY pyproject.toml ./
-COPY app.py config.py errors.py lanes.py logutil.py ./
+COPY app.py config.py errors.py prompts.py logutil.py ./
 COPY inference ./inference
 COPY routers ./routers
 COPY prompts ./prompts

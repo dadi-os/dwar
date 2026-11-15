@@ -25,7 +25,7 @@ dev = [
 ]
 
 [tool.setuptools]
-py-modules = ["app", "config", "errors", "lanes", "logutil"]
+py-modules = ["app", "config", "errors", "prompts", "logutil"]
 
 [tool.setuptools.packages.find]
 include = ["routers*", "inference*"]

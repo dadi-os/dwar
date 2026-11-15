@@ -13,19 +13,14 @@ def _load(name: str) -> str:
         return cached[1]
     text = path.read_text(encoding="utf-8").strip()
     if not text:
-        raise RuntimeError(f"lane prompt {name} is empty")
+        raise RuntimeError(f"prompt {name} is empty")
     _cache[name] = (mtime, text)
     return text
 
 
-def work_lane_block() -> str:
-    """The system block Dwar prepends on the work lane (`prompts/work.txt`)."""
-    return _load("work.txt")
-
-
-def process_lane_block() -> str:
-    """The system block Dwar prepends on the process lane (`prompts/process.txt`)."""
-    return _load("process.txt")
+def agent_prompt_block() -> str:
+    """The system block Dwar prepends on /chat/agent (`prompts/agent.txt`)."""
+    return _load("agent.txt")
 
 
 def describe_instruction() -> str:

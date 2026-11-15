@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from inference import complete_chat, complete_text
+from inference import complete_agent, complete_text
 from inference.types import ChatRequest as InternalChatRequest
 from inference.types import ChatResponse as InternalChatResponse
 from routers.v1.schemas import ChatRequest, ChatResponse
@@ -16,14 +16,9 @@ def _to_http(response: InternalChatResponse) -> ChatResponse:
     return ChatResponse.model_validate(response.model_dump(exclude={"provider_stop_reason"}))
 
 
-@router.post("/work", response_model=ChatResponse)
-def work(body: ChatRequest) -> ChatResponse:
-    return _to_http(complete_chat("work", _to_internal(body)))
-
-
-@router.post("/process", response_model=ChatResponse)
-def process(body: ChatRequest) -> ChatResponse:
-    return _to_http(complete_chat("process", _to_internal(body)))
+@router.post("/agent", response_model=ChatResponse)
+def agent(body: ChatRequest) -> ChatResponse:
+    return _to_http(complete_agent(_to_internal(body)))
 
 
 @router.post("/complete", response_model=ChatResponse)

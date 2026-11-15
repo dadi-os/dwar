@@ -13,7 +13,6 @@ from inference.types import (
     ChatRequest,
     ChatResponse,
     ContentBlock,
-    Lane,
     Message,
     RedactedThinkingBlock,
     ResponseBlock,
@@ -26,7 +25,7 @@ from inference.types import (
 )
 
 _LONG_LIVED = {"type": "ephemeral", "ttl": "1h"}
-"""Cache entry for prefixes reused across loops: the system lane block and a cache_breakpoint turn."""
+"""Cache entry for prefixes reused across loops: the agent prompt block and a cache_breakpoint turn."""
 
 _SHORT_LIVED = {"type": "ephemeral"}
 """Five-minute cache entry on the newest message, read by the loop's next step."""
@@ -63,14 +62,14 @@ class AnthropicAdapter:
         )
 
     def complete(
-        self, request: ChatRequest, lane: Lane | None, lane_block: str | None
+        self, request: ChatRequest, agent_block: str | None
     ) -> ChatResponse:
         system: list[dict[str, Any]] = [{"type": "text", "text": request.system}]
-        if lane_block is not None:
+        if agent_block is not None:
             system.append(
                 {
                     "type": "text",
-                    "text": lane_block,
+                    "text": agent_block,
                     "cache_control": _LONG_LIVED,
                 }
             )
@@ -80,7 +79,7 @@ class AnthropicAdapter:
             "thinking": {"type": "adaptive", "display": "summarized"},
             "output_config": {"effort": self._effort},
             "system": system,
-            "messages": _with_breakpoints(_shape_history(request.messages, lane)),
+            "messages": _with_breakpoints(_shape_history(request.messages)),
         }
         if request.tools:
             kwargs["tools"] = [_to_tool(tool) for tool in request.tools]
@@ -151,7 +150,7 @@ def _with_breakpoints(messages: list[Message]) -> list[dict[str, Any]]:
     one-hour entry: it ends the prefix the caller's next loop starts from too (an
     agent's next wake opens on the same transcript), so the steps in between keep
     it warm and the next loop reads it instead of rewriting it. Anthropic wants
-    longer-lived entries ahead of shorter ones, which is why the system lane block
+    longer-lived entries ahead of shorter ones, which is why the agent prompt block
     is one-hour as well.
     """
     rendered = [_to_message(message) for message in messages]
@@ -174,12 +173,12 @@ def _cached(message: dict[str, Any], cache_control: dict[str, str]) -> dict[str,
     return {"role": message["role"], "content": blocks}
 
 
-def _shape_history(messages: list[Message], lane: Lane | None) -> list[Message]:
-    """Keep this lane's own Anthropic turns verbatim (thinking must be replayed
-    unchanged inside a tool loop); another provider's or the other lane's tool
-    calls and thinking become labelled text."""
+def _shape_history(messages: list[Message]) -> list[Message]:
+    """Keep Anthropic's own turns verbatim (thinking must be replayed unchanged
+    inside a tool loop); another provider's tool calls and thinking become
+    labelled text."""
     return merge_turns(
-        foreign_turns_as_text(messages, "anthropic", lane), split_before_thinking=True
+        foreign_turns_as_text(messages, "anthropic"), split_before_thinking=True
     )
 
 
