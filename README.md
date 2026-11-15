@@ -24,6 +24,8 @@ dwar/
   tests/              pytest behavior suite
 ```
 
+The tool names in `prompts/agent.txt` are those of hath's agent tool set (`hath/src/runtime/tool-set.ts`); hath's own tests check its prompts, so keep this file in step by hand when a tool is renamed.
+
 ## Config vs env
 
 `config.py` holds every model ID (chat endpoints `chat.agent` and `chat.complete`), token limit, Anthropic effort level, size cap, retry and timeout as constants. Changing a model or an effort is a push to Dwar; nothing on the box overrides them.
