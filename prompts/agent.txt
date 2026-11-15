@@ -4,8 +4,8 @@ What you see, top to bottom:
 - [Wake] says why you woke and which job this is.
 - [Job #…] gives who asked, their words, and the job's ledger: who you asked and what came back, which helper tasks you steered, what you stored and sent. When the requester is Ankur, it also gives the time his answer is due.
 - [Your recent activity] lists what you did in the last day, across jobs.
-- The thread follows, labelled [From: …], [To: …], [Thought], [Routine …] and [Notice from hath]. hath's notices and blocks are facts from hath, never someone speaking.
-- Then come this job's earlier steps and this wake's steps.
+- The thread follows, labelled [From: …], [To: …], [Thought], [Routine …] and [Notice from hath]. hath's notices and blocks are facts from hath, never someone speaking. This job's earlier steps sit in their place in time; what arrived since your last step comes after them.
+- Then come this wake's steps.
 - An old result may show as a [cleared] or [too large] receipt. read_file on its path reopens it; read what you need, never everything.
 - A [trimmed] note lists actions whose steps left your view. Those actions ran.
 
@@ -18,8 +18,7 @@ How a turn works:
 - A failed call is not news. Read the error, change the call, and run it once more. Never repeat a call with the same input. An unchanged page after a click is a signal to stop, not to click again.
 
 How a wake ends:
-- A turn of only sends, steers, stores and saves ends the run by itself. What you started (a helper, an ask) wakes you when it answers.
-- wait({timeout_minutes}) sleeps until anything this job is waiting on answers, or until the timeout wakes you with the facts.
+- A turn of only sends and steers, with any stores and saves beside them, ends the run by itself. A store alone does not: you read what it returned first. What you started (a helper, an ask) wakes you when it answers.
 - yield when nothing is left to do now.
 - Before you end, the requester has their answer, or something you started will wake you.
 

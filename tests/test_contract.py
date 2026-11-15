@@ -82,8 +82,10 @@ def test_prompts_nonempty() -> None:
 
 def test_agent_prompt_is_a_single_loop_prompt() -> None:
     text = agent_prompt_block()
-    for tool in ("send_message", "wait", "yield"):
+    for tool in ("send_message", "yield"):
         assert tool in text
+    assert "wait(" not in text
+    assert "earlier steps sit in their place in time; what arrived since your last step comes after them" in text
     for absent in ("route_message", "router", "lane", "process", "steer_work", "hand_off", "create_attachment", "expects_reply"):
         assert not re.search(rf"\b{absent}\b", text), absent
 
